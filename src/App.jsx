@@ -140,52 +140,54 @@ function TaskModal({ task, onSave, onClose }) {
   );
 }
 
-// ── AI INTAKE ─────────────────────────────────────────────────────────────────
+// ── QUICK ADD FUNNEL ──────────────────────────────────────────────────────────
 function AIIntake({ onTaskCreated }) {
-  const [text, setText] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [preview, setPreview] = useState(null);
-  const [error, setError] = useState("");
-  const interpret = async () => {
-    if (!text.trim()) return;
-    setLoading(true); setError(""); setPreview(null);
-    try {
-      const resp = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 800, system: `Extraia dados de demanda e retorne APENAS JSON com: title,person("Gabi"|"Julia"|"Mikaeli"),priority("Urgente"|"Alta"|"Normal"|"Baixa"),date("YYYY-MM-DD"|""),channel("Instagram"|"YouTube"|"TikTok"|"WhatsApp"|"Site"|"Interno"),status("A fazer"|"Em andamento"|"Aguardando aprovação"|"Concluído"|"Pausado"),sector("imersao"|"redes"|"conteudo"|"parcerias"|"performance"|"interno"),obs. Escritório Mikaeli Scudeler — previdência internacional e vistos para Espanha.`, messages: [{ role: "user", content: text }] }) });
-      const data = await resp.json();
-      const raw = data.content?.find(b => b.type === "text")?.text || "";
-      setPreview(JSON.parse(raw.replace(/```json|```/g, "").trim()));
-    } catch { setError("Não foi possível interpretar."); }
-    setLoading(false);
+  const [title, setTitle] = useState("");
+  const [sector, setSector] = useState("redes");
+  const [person, setPerson] = useState("Gabi");
+  const [priority, setPriority] = useState("Normal");
+
+  const sec = SECTORS.find(s => s.id === sector);
+
+  const handleAdd = () => {
+    if (!title.trim()) return;
+    onTaskCreated({ id: null, title: title.trim(), person, priority, date: "", channel: "Instagram", status: "A fazer", sector, obs: "" });
+    setTitle("");
   };
-  const sec = preview ? SECTORS.find(s => s.id === preview.sector) : null;
+
+  const I = { padding: "7px 10px", borderRadius: 8, border: "1.5px solid #BFDBFE", fontSize: 13, color: "#1E293B", background: "#fff", outline: "none", fontFamily: "inherit" };
+
   return (
-    <div style={{ background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderRadius: 14, padding: 20, border: "1.5px solid #BFDBFE", marginBottom: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>✨</div>
-        <div><div style={{ fontSize: 14, fontWeight: 700, color: "#1E3A8A" }}>Funil Inteligente de Demandas</div><div style={{ fontSize: 11, color: "#3B82F6" }}>Descreva em linguagem natural — a IA organiza automaticamente</div></div>
+    <div style={{ background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderRadius: 14, padding: 18, border: "1.5px solid #BFDBFE", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+        <div style={{ width: 34, height: 34, borderRadius: 9, background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>⚡</div>
+        <div><div style={{ fontSize: 14, fontWeight: 700, color: "#1E3A8A" }}>Adicionar Demanda Rápida</div><div style={{ fontSize: 11, color: "#3B82F6" }}>Preencha os campos e adicione direto ao kanban</div></div>
       </div>
-      <textarea value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === "Enter" && e.metaKey && interpret()} placeholder={'Ex: "Reels urgente para Instagram sobre vistos, Julia cuida, entregar sexta"'} style={{ width: "100%", minHeight: 76, padding: "10px 14px", borderRadius: 10, border: "1.5px solid #BFDBFE", fontSize: 13, color: "#1E293B", background: "#fff", resize: "none", fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
-      <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center" }}>
-        <button onClick={interpret} disabled={loading || !text.trim()} style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: text.trim() ? "linear-gradient(135deg,#1E3A8A,#3B82F6)" : "#CBD5E1", color: "#fff", cursor: text.trim() ? "pointer" : "not-allowed", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>{loading ? "⏳ Interpretando..." : "✨ Interpretar com IA"}</button>
-        <span style={{ fontSize: 11, color: "#94A3B8" }}>⌘+Enter</span>
-        {error && <span style={{ fontSize: 11, color: "#DC2626" }}>⚠ {error}</span>}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto auto", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <input
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && handleAdd()}
+          placeholder="Descreva a demanda... (Enter para adicionar)"
+          style={{ ...I, width: "100%", boxSizing: "border-box", padding: "9px 12px" }}
+        />
+        <select value={sector} onChange={e => setSector(e.target.value)} style={I}>
+          {SECTORS.map(s => <option key={s.id} value={s.id}>{s.icon} {s.label}</option>)}
+        </select>
+        <select value={person} onChange={e => setPerson(e.target.value)} style={I}>
+          {PEOPLE.map(p => <option key={p}>{p}</option>)}
+        </select>
+        <select value={priority} onChange={e => setPriority(e.target.value)} style={I}>
+          {PRIORITIES.map(p => <option key={p}>{p}</option>)}
+        </select>
+        <button onClick={handleAdd} disabled={!title.trim()} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: title.trim() ? "linear-gradient(135deg,#1E3A8A,#3B82F6)" : "#CBD5E1", color: "#fff", cursor: title.trim() ? "pointer" : "not-allowed", fontWeight: 700, fontSize: 13, fontFamily: "inherit", whiteSpace: "nowrap" }}>
+          + Adicionar
+        </button>
       </div>
-      {preview && (
-        <div style={{ marginTop: 14, background: "#fff", borderRadius: 10, padding: 14, border: "1.5px solid #93C5FD" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#2563EB", marginBottom: 10, textTransform: "uppercase" }}>✅ Confirme a demanda:</div>
-          {sec && <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: sec.bg, color: sec.color, padding: "3px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700, marginBottom: 10 }}>{sec.icon} {sec.label}</div>}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-            {[["Título", preview.title], ["Responsável", preview.person], ["Prioridade", preview.priority], ["Canal", `${CHANNEL_ICONS[preview.channel] || ""} ${preview.channel}`], ["Status", preview.status], ["Data", preview.date || "Não definida"]].map(([k, v]) => (
-              <div key={k} style={{ fontSize: 12 }}><span style={{ color: "#94A3B8", fontWeight: 600 }}>{k}: </span><span style={{ color: "#1E293B", fontWeight: 600 }}>{v}</span></div>
-            ))}
-          </div>
-          {preview.obs && <div style={{ fontSize: 12, color: "#64748B", marginBottom: 10 }}><strong>Obs:</strong> {preview.obs}</div>}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => { onTaskCreated({ ...preview, id: null }); setText(""); setPreview(null); }} style={{ padding: "7px 16px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Confirmar ✓</button>
-            <button onClick={() => setPreview(null)} style={{ padding: "7px 14px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Descartar</button>
-          </div>
-        </div>
-      )}
+      <div style={{ display: "flex", gap: 6, marginTop: 10, alignItems: "center" }}>
+        {sec && <span style={{ fontSize: 11, background: sec.bg, color: sec.color, padding: "2px 9px", borderRadius: 999, fontWeight: 600 }}>{sec.icon} {sec.label}</span>}
+        <span style={{ fontSize: 11, color: "#94A3B8" }}>Para mais detalhes (canal, data, obs) use o botão <strong>"+ Nova Demanda"</strong> no topo</span>
+      </div>
     </div>
   );
 }
