@@ -1386,12 +1386,293 @@ function FixasPage() {
   );
 }
 
+
+// ── HOME PAGE ─────────────────────────────────────────────────────────────────
+const VERSICULOS = [
+  { text: "Tudo posso naquele que me fortalece.", ref: "Filipenses 4,13" },
+  { text: "O Senhor é meu pastor e nada me faltará.", ref: "Salmos 23,1" },
+  { text: "Confia no Senhor de todo o teu coração.", ref: "Provérbios 3,5" },
+  { text: "Sede fortes e corajosos. Não temais, nem vos assusteis.", ref: "Deuteronômio 31,6" },
+  { text: "Buscai primeiro o Reino de Deus e a sua justiça.", ref: "Mateus 6,33" },
+  { text: "Com Deus faremos proezas.", ref: "Salmos 60,14" },
+  { text: "Eu sou o caminho, a verdade e a vida.", ref: "João 14,6" },
+  { text: "A fé é o fundamento das coisas que se esperam.", ref: "Hebreus 11,1" },
+  { text: "O amor é paciente, o amor é bondoso.", ref: "1 Coríntios 13,4" },
+  { text: "Pedi e dar-se-vos-á; buscai e encontrareis.", ref: "Mateus 7,7" },
+  { text: "Lançai sobre Ele toda a vossa ansiedade, porque Ele tem cuidado de vós.", ref: "1 Pedro 5,7" },
+  { text: "Porque sou eu que conheço os planos que tenho a vosso respeito.", ref: "Jeremias 29,11" },
+  { text: "Alegrai-vos sempre no Senhor.", ref: "Filipenses 4,4" },
+  { text: "Não vos deixarei órfãos, voltarei para vós.", ref: "João 14,18" },
+  { text: "Com alegria hauríeis água das fontes da salvação.", ref: "Isaías 12,3" },
+  { text: "Sede vigilantes e firmes na fé.", ref: "1 Coríntios 16,13" },
+  { text: "O Senhor te abençoe e te guarde.", ref: "Números 6,24" },
+  { text: "Deus é amor, e quem permanece no amor permanece em Deus.", ref: "1 João 4,16" },
+  { text: "A misericórdia do Senhor é eterna.", ref: "Salmos 118,1" },
+  { text: "Não vos preocupeis com o dia de amanhã.", ref: "Mateus 6,34" },
+  { text: "Onde estão dois ou três reunidos em meu nome, aí estou eu no meio deles.", ref: "Mateus 18,20" },
+  { text: "Graças a Deus que nos dá a vitória por Jesus Cristo.", ref: "1 Coríntios 15,57" },
+  { text: "Vinde a mim todos os que estais cansados e sobrecarregados.", ref: "Mateus 11,28" },
+  { text: "Sede a luz do mundo.", ref: "Mateus 5,14" },
+  { text: "O Senhor está comigo, não temerei.", ref: "Salmos 118,6" },
+  { text: "Amai-vos uns aos outros como eu vos amei.", ref: "João 15,12" },
+  { text: "Nada vos perturbará, nada vos espantará.", ref: "Santa Teresa de Ávila" },
+  { text: "Tende ânimo, sou eu, não temais.", ref: "Mateus 14,27" },
+  { text: "A paz que eu vos dou não é como a que o mundo dá.", ref: "João 14,27" },
+  { text: "Sede santos, porque eu, o Senhor vosso Deus, sou santo.", ref: "Levítico 19,2" },
+  { text: "Deus não nos deu espírito de covardia, mas de força, amor e equilíbrio.", ref: "2 Timóteo 1,7" },
+];
+
+const DATAS_COMEMORATIVAS = [
+  { mes: 1,  dia: 1,  nome: "Ano Novo / Dia Mundial da Paz", tag: "comemorativa" },
+  { mes: 1,  dia: 6,  nome: "Dia de Reis (Epifania)", tag: "religioso" },
+  { mes: 1,  dia: 25, nome: "Dia do Turismo", tag: "conteudo" },
+  { mes: 2,  dia: 4,  nome: "Dia Mundial contra o Câncer", tag: "conteudo" },
+  { mes: 2,  dia: 9,  nome: "Dia do Advogado", tag: "profissional" },
+  { mes: 2,  dia: 14, nome: "Dia dos Namorados (Internacional)", tag: "comemorativa" },
+  { mes: 3,  dia: 8,  nome: "Dia Internacional da Mulher", tag: "comemorativa" },
+  { mes: 3,  dia: 25, nome: "Anunciação do Senhor", tag: "religioso" },
+  { mes: 4,  dia: 7,  nome: "Dia Mundial da Saúde", tag: "conteudo" },
+  { mes: 4,  dia: 21, nome: "Tiradentes / Feriado Nacional", tag: "feriado" },
+  { mes: 4,  dia: 22, nome: "Dia da Terra", tag: "conteudo" },
+  { mes: 5,  dia: 1,  nome: "Dia do Trabalho", tag: "feriado" },
+  { mes: 5,  dia: 11, nome: "Dia das Mães", tag: "comemorativa" },
+  { mes: 5,  dia: 13, nome: "Nossa Senhora de Fátima", tag: "religioso" },
+  { mes: 6,  dia: 12, nome: "Dia dos Namorados (Brasil)", tag: "comemorativa" },
+  { mes: 6,  dia: 13, nome: "Festas Juninas — Santo Antônio", tag: "religioso" },
+  { mes: 6,  dia: 24, nome: "Festas Juninas — São João", tag: "religioso" },
+  { mes: 6,  dia: 29, nome: "São Pedro e São Paulo", tag: "religioso" },
+  { mes: 7,  dia: 25, nome: "Santiago Apóstolo", tag: "religioso" },
+  { mes: 8,  dia: 11, nome: "Dia dos Pais", tag: "comemorativa" },
+  { mes: 8,  dia: 15, nome: "Assunção de Nossa Senhora", tag: "religioso" },
+  { mes: 9,  dia: 7,  nome: "Independência do Brasil", tag: "feriado" },
+  { mes: 9,  dia: 8,  nome: "Natividade de Nossa Senhora", tag: "religioso" },
+  { mes: 10, dia: 4,  nome: "São Francisco de Assis", tag: "religioso" },
+  { mes: 10, dia: 12, nome: "Nossa Senhora Aparecida — Feriado", tag: "religioso" },
+  { mes: 10, dia: 15, nome: "Dia das Crianças / Dia do Professor", tag: "comemorativa" },
+  { mes: 11, dia: 1,  nome: "Dia de Todos os Santos", tag: "religioso" },
+  { mes: 11, dia: 2,  nome: "Finados — Feriado", tag: "feriado" },
+  { mes: 11, dia: 15, nome: "Proclamação da República", tag: "feriado" },
+  { mes: 11, dia: 20, nome: "Dia da Consciência Negra", tag: "feriado" },
+  { mes: 12, dia: 8,  nome: "Imaculada Conceição — Feriado", tag: "religioso" },
+  { mes: 12, dia: 25, nome: "Natal", tag: "religioso" },
+  { mes: 12, dia: 31, nome: "Réveillon / Ano Novo", tag: "comemorativa" },
+];
+
+const TAG_STYLE = {
+  religioso:    { bg: "#FAEEDA", color: "#633806" },
+  comemorativa: { bg: "#FDF2F8", color: "#831843" },
+  feriado:      { bg: "#FEF2F2", color: "#7F1D1D" },
+  profissional: { bg: "#EEF2FF", color: "#3730A3" },
+  conteudo:     { bg: "#ECFDF5", color: "#064E3B" },
+};
+
+function HomePage({ tasks, setTab }) {
+  const today = new Date();
+  const dayOfYear = Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 86400000);
+  const versiculo = VERSICULOS[dayOfYear % VERSICULOS.length];
+
+  // Task stats
+  const todayStr = today.toISOString().split("T")[0];
+  const tomorrowStr = new Date(today.getTime() + 86400000).toISOString().split("T")[0];
+  const urgentes = tasks.filter(t => t.priority === "Urgente" && t.status !== "Concluído");
+  const vencem_hoje = tasks.filter(t => t.date === todayStr && t.status !== "Concluído");
+  const vencem_amanha = tasks.filter(t => t.date === tomorrowStr && t.status !== "Concluído");
+  const atrasadas = tasks.filter(t => t.date && t.date < todayStr && t.status !== "Concluído");
+  const concluidas_semana = tasks.filter(t => t.status === "Concluído");
+  const em_andamento = tasks.filter(t => t.status === "Em andamento");
+
+  // Greeting
+  const hora = today.getHours();
+  const saudacao = hora < 12 ? "Bom dia" : hora < 18 ? "Boa tarde" : "Boa noite";
+
+  // Next dates comemorativas (next 30 days)
+  const proximasDatas = [];
+  for (let i = 0; i <= 30; i++) {
+    const d = new Date(today.getTime() + i * 86400000);
+    const m = d.getMonth() + 1;
+    const dia = d.getDate();
+    const found = DATAS_COMEMORATIVAS.filter(dc => dc.mes === m && dc.dia === dia);
+    found.forEach(dc => proximasDatas.push({ ...dc, date: d, diasRestantes: i }));
+  }
+
+  // Sector progress
+  const sectorStats = SECTORS.map(sec => {
+    const secTasks = tasks.filter(t => t.sector === sec.id);
+    const done = secTasks.filter(t => t.status === "Concluído").length;
+    const pct = secTasks.length ? Math.round((done / secTasks.length) * 100) : 0;
+    const urgSec = secTasks.filter(t => t.priority === "Urgente" && t.status !== "Concluído").length;
+    return { ...sec, total: secTasks.length, done, pct, urgSec };
+  }).filter(s => s.total > 0);
+
+  const I = { padding: "6px 10px", borderRadius: 7, border: "1.5px solid #E2E8F0", fontSize: 12, color: "#1E293B", background: "#fff", outline: "none", fontFamily: "inherit", cursor: "pointer", fontWeight: 600 };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+      {/* GREETING + VERSICULO */}
+      <div style={{ background: "linear-gradient(135deg,#1E3A8A,#2563EB,#3B82F6)", borderRadius: 16, padding: "22px 24px", color: "#fff" }}>
+        <div style={{ fontSize: 12, color: "#BAE6FD", fontWeight: 600, marginBottom: 4 }}>
+          {today.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
+        </div>
+        <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 16 }}>{saudacao}, equipe! 👋</div>
+        <div style={{ background: "rgba(255,255,255,0.12)", borderRadius: 12, padding: "14px 18px", borderLeft: "3px solid rgba(255,255,255,0.4)" }}>
+          <div style={{ fontSize: 14, fontStyle: "italic", color: "#EFF6FF", lineHeight: 1.6, marginBottom: 6 }}>"{versiculo.text}"</div>
+          <div style={{ fontSize: 11, color: "#BAE6FD", fontWeight: 600 }}>— {versiculo.ref}</div>
+        </div>
+      </div>
+
+      {/* ALERTAS */}
+      {(atrasadas.length > 0 || urgentes.length > 0) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {atrasadas.length > 0 && (
+            <div onClick={() => setTab("agenda")} style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 18 }}>⚠️</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#7F1D1D" }}>{atrasadas.length} demanda{atrasadas.length > 1 ? "s" : ""} atrasada{atrasadas.length > 1 ? "s" : ""}!</div>
+                <div style={{ fontSize: 11, color: "#991B1B" }}>{atrasadas.slice(0, 2).map(t => t.title).join(" · ")}{atrasadas.length > 2 ? ` +${atrasadas.length - 2}` : ""}</div>
+              </div>
+              <span style={{ fontSize: 12, color: "#DC2626", fontWeight: 600 }}>Ver →</span>
+            </div>
+          )}
+          {urgentes.length > 0 && (
+            <div onClick={() => setTab("demandas")} style={{ background: "#FFF7ED", border: "1.5px solid #FED7AA", borderRadius: 12, padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 18 }}>🔥</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#78350F" }}>{urgentes.length} urgente{urgentes.length > 1 ? "s" : ""} no radar</div>
+                <div style={{ fontSize: 11, color: "#92400E" }}>{urgentes.slice(0, 2).map(t => t.title).join(" · ")}{urgentes.length > 2 ? ` +${urgentes.length - 2}` : ""}</div>
+              </div>
+              <span style={{ fontSize: 12, color: "#D97706", fontWeight: 600 }}>Ver →</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* QUICK STATS */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 10 }}>
+        {[
+          { icon: "🔥", label: "Hoje vencem", value: vencem_hoje.length, color: "#DC2626", bg: "#FEF2F2", action: () => setTab("agenda") },
+          { icon: "⏰", label: "Amanhã", value: vencem_amanha.length, color: "#D97706", bg: "#FFFBEB", action: () => setTab("agenda") },
+          { icon: "⚡", label: "Em andamento", value: em_andamento.length, color: "#2563EB", bg: "#EFF6FF", action: () => setTab("demandas") },
+          { icon: "✅", label: "Concluídas", value: concluidas_semana.length, color: "#059669", bg: "#ECFDF5", action: () => setTab("demandas") },
+          { icon: "📋", label: "Total tarefas", value: tasks.length, color: "#475569", bg: "#F8FAFC", action: () => setTab("demandas") },
+        ].map(s => (
+          <div key={s.label} onClick={s.action} style={{ background: s.bg, borderRadius: 12, padding: "14px 16px", cursor: "pointer", transition: "transform 0.15s", border: `1px solid ${s.bg}` }}
+            onMouseEnter={e => e.currentTarget.style.transform = "translateY(-2px)"}
+            onMouseLeave={e => e.currentTarget.style.transform = ""}>
+            <div style={{ fontSize: 18, marginBottom: 6 }}>{s.icon}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: 11, color: s.color, fontWeight: 600, opacity: 0.8 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ATALHOS RAPIDOS */}
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Atalhos rápidos</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {[
+            { icon: "📋", label: "Nova demanda", action: () => setTab("demandas"), color: "#1E3A8A" },
+            { icon: "📅", label: "Novo conteúdo", action: () => setTab("calendario"), color: "#6366F1" },
+            { icon: "🗓", label: "Ver agenda", action: () => setTab("agenda"), color: "#D97706" },
+            { icon: "📌", label: "Rotinas", action: () => setTab("fixas"), color: "#059669" },
+            { icon: "📊", label: "Relatórios", action: () => setTab("relatorios"), color: "#3B82F6" },
+          ].map(a => (
+            <button key={a.label} onClick={a.action} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, border: `1.5px solid ${a.color}22`, background: "#fff", color: a.color, cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>
+              <span style={{ fontSize: 14 }}>{a.icon}</span>{a.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+
+        {/* PROGRESSO POR SETOR */}
+        <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #E2E8F0", padding: "16px 18px" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#1E293B", marginBottom: 14 }}>📊 Progresso por setor</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {sectorStats.map(sec => (
+              <div key={sec.id} onClick={() => setTab("demandas")} style={{ cursor: "pointer" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <span style={{ fontSize: 12, color: "#334155", fontWeight: 500 }}>{sec.icon} {sec.label}</span>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    {sec.urgSec > 0 && <span style={{ fontSize: 9, background: "#FEE2E2", color: "#DC2626", padding: "1px 5px", borderRadius: 999, fontWeight: 700 }}>⚡{sec.urgSec}</span>}
+                    <span style={{ fontSize: 11, fontWeight: 700, color: sec.color }}>{sec.pct}%</span>
+                  </div>
+                </div>
+                <div style={{ height: 6, background: "#F1F5F9", borderRadius: 999 }}>
+                  <div style={{ width: `${sec.pct}%`, height: "100%", background: sec.color, borderRadius: 999, transition: "width 0.5s ease" }} />
+                </div>
+              </div>
+            ))}
+            {sectorStats.length === 0 && <div style={{ textAlign: "center", padding: "16px 0", color: "#94A3B8", fontSize: 12 }}>Nenhuma tarefa ainda</div>}
+          </div>
+        </div>
+
+        {/* DATAS COMEMORATIVAS */}
+        <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #E2E8F0", padding: "16px 18px" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#1E293B", marginBottom: 14 }}>🗓 Datas para posts (próximos 30 dias)</div>
+          {proximasDatas.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "16px 0", color: "#94A3B8", fontSize: 12 }}>Nenhuma data comemorativa nos próximos 30 dias</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 240, overflowY: "auto" }}>
+              {proximasDatas.map((d, i) => {
+                const ts = TAG_STYLE[d.tag] || TAG_STYLE.conteudo;
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ textAlign: "center", minWidth: 36 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: "#1E293B", lineHeight: 1 }}>{d.dia}</div>
+                      <div style={{ fontSize: 9, color: "#94A3B8", textTransform: "uppercase", fontWeight: 600 }}>{d.date.toLocaleDateString("pt-BR", { month: "short" })}</div>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#1E293B" }}>{d.nome}</div>
+                      <div style={{ display: "flex", gap: 5, marginTop: 2, alignItems: "center" }}>
+                        <span style={{ fontSize: 9, background: ts.bg, color: ts.color, padding: "1px 6px", borderRadius: 999, fontWeight: 600 }}>{d.tag}</span>
+                        <span style={{ fontSize: 10, color: d.diasRestantes === 0 ? "#DC2626" : d.diasRestantes <= 3 ? "#D97706" : "#94A3B8", fontWeight: d.diasRestantes <= 3 ? 700 : 400 }}>
+                          {d.diasRestantes === 0 ? "hoje!" : d.diasRestantes === 1 ? "amanhã" : `em ${d.diasRestantes} dias`}
+                        </span>
+                      </div>
+                    </div>
+                    <button onClick={() => setTab("calendario")} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 6, border: "1.5px solid #E2E8F0", background: "#F8FAFC", color: "#3B82F6", cursor: "pointer", fontWeight: 600, fontFamily: "inherit", whiteSpace: "nowrap" }}>+ Post</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* DEMANDAS DE HOJE */}
+      {vencem_hoje.length > 0 && (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #FED7AA", padding: "16px 18px" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#92400E", marginBottom: 12 }}>🔥 Vencem hoje</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {vencem_hoje.map(task => {
+              const sec = SECTORS.find(s => s.id === task.sector);
+              const ss = STATUS_STYLE[task.status] || STATUS_STYLE["A fazer"];
+              return (
+                <div key={task.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: ss.cardBg, borderRadius: 9, border: `1px solid ${ss.border}`, borderLeft: `3px solid ${ss.accent}` }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#1E293B" }}>{task.title}</div>
+                    {sec && <span style={{ fontSize: 10, background: sec.bg, color: sec.color, padding: "1px 6px", borderRadius: 999, fontWeight: 600 }}>{sec.icon} {sec.label}</span>}
+                  </div>
+                  <Avatar name={task.person} size={26} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
 // ── MAIN DASHBOARD ────────────────────────────────────────────────────────────
 export default function App() {
   const [tasks, setTasks] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [view, setView] = useState("setores");
-  const [tab, setTab] = useState("demandas");
+  const [tab, setTab] = useState("home");
   const [modal, setModal] = useState(null);
   const [filters, setFilters] = useState({ person: "", priority: "", channel: "", status: "", sector: "" });
 
@@ -1429,7 +1710,7 @@ export default function App() {
 
   const stats = useMemo(() => STATUSES.map(s => ({ label: s, count: tasks.filter(t => t.status === s).length, ...STATUS_STYLE[s] })), [tasks]);
   const fmtDate = d => d ? new Date(d + "T12:00").toLocaleDateString("pt-BR") : "—";
-  const TABS = [["demandas", "📋 Demandas"], ["agenda", "🗓 Agenda"], ["fixas", "📌 Rotinas"], ["calendario", "📅 Calendário"], ["instagram", "📸 Instagram"], ["relatorios", "📊 Relatórios"]];
+  const TABS = [["home", "🏠 Início"], ["demandas", "📋 Demandas"], ["agenda", "🗓 Agenda"], ["fixas", "📌 Rotinas"], ["calendario", "📅 Calendário"], ["instagram", "📸 Instagram"], ["relatorios", "📊 Relatórios"]];
 
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#1E293B" }}>
@@ -1444,7 +1725,7 @@ export default function App() {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {PEOPLE.map(p => <Avatar key={p} name={p} size={34} />)}
-            {tab === "demandas" && <button onClick={() => setModal(emptyTask())} style={{ background: "rgba(255,255,255,0.14)", backdropFilter: "blur(8px)", color: "#fff", border: "1.5px solid rgba(255,255,255,0.25)", padding: "8px 16px", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6, marginLeft: 8, fontFamily: "inherit" }}>+ Nova Demanda</button>}
+            {(tab === "demandas" || tab === "home") && <button onClick={() => { setModal(emptyTask()); setTab("demandas"); }} style={{ background: "rgba(255,255,255,0.14)", backdropFilter: "blur(8px)", color: "#fff", border: "1.5px solid rgba(255,255,255,0.25)", padding: "8px 16px", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6, marginLeft: 8, fontFamily: "inherit" }}>+ Nova Demanda</button>}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, overflowX: "auto" }}>
@@ -1498,6 +1779,7 @@ export default function App() {
             )}
           </>
         )}
+        {tab === "home" && <HomePage tasks={tasks} setTab={setTab} />}
         {tab === "agenda" && <AgendaPage tasks={tasks} />}
         {tab === "fixas" && <FixasPage />}
         {tab === "calendario" && <CalendarioPage />}
