@@ -23,11 +23,11 @@ const PRIORITY_STYLE = {
   Baixa:   { bg: "#F1F5F9", color: "#64748B", dot: "#94A3B8" },
 };
 const STATUS_STYLE = {
-  "A fazer":              { bg: "#F1F5F9", accent: "#94A3B8", text: "#475569" },
-  "Em andamento":         { bg: "#DBEAFE", accent: "#3B82F6", text: "#1D4ED8" },
-  "Aguardando aprovação": { bg: "#FEF3C7", accent: "#F59E0B", text: "#92400E" },
-  "Concluído":            { bg: "#D1FAE5", accent: "#10B981", text: "#065F46" },
-  "Pausado":              { bg: "#FEE2E2", accent: "#F87171", text: "#991B1B" },
+  "A fazer":              { bg: "#F1EFE8", accent: "#888780", text: "#2C2C2A",  cardBg: "#F8F6F1", border: "#D3D1C7" },
+  "Em andamento":         { bg: "#E6F1FB", accent: "#378ADD", text: "#042C53",  cardBg: "#EEF6FD", border: "#B5D4F4" },
+  "Aguardando aprovação": { bg: "#FAEEDA", accent: "#BA7517", text: "#412402",  cardBg: "#FEF6EC", border: "#FAC775" },
+  "Concluído":            { bg: "#EAF3DE", accent: "#639922", text: "#173404",  cardBg: "#F2F9EA", border: "#C0DD97" },
+  "Pausado":              { bg: "#FCEBEB", accent: "#E24B4A", text: "#501313",  cardBg: "#FEF3F3", border: "#F7C1C1" },
 };
 const KEYWORDS = ["dúvida","quando","como","preço","valor","funciona","ajuda","quero","preciso","?","visto","previdência","curso","turma","aposentadoria","custo"];
 const PLATFORMS = [
@@ -105,33 +105,98 @@ function HBar({ score }) {
 // ── TASK MODAL ────────────────────────────────────────────────────────────────
 function TaskModal({ task, onSave, onClose }) {
   const [form, setForm] = useState({ ...task });
+  const [activeTab, setActiveTab] = useState("form");
+  const [newComment, setNewComment] = useState("");
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const I = { width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 13, color: "#1E293B", background: "#F8FAFC", outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
   const L = { fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4, display: "block" };
+
+  const comments = form.task_comments || [];
+
+  const addComment = () => {
+    if (!newComment.trim()) return;
+    const entry = { id: Date.now(), text: newComment.trim(), author: "Você", ts: new Date().toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) };
+    setForm(f => ({ ...f, task_comments: [...(f.task_comments || []), entry] }));
+    setNewComment("");
+  };
+
+  const ss = STATUS_STYLE[form.status] || STATUS_STYLE["A fazer"];
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(4px)" }} onClick={onClose}>
-      <div style={{ background: "#fff", borderRadius: 16, padding: 28, width: 520, maxWidth: "95vw", boxShadow: "0 24px 60px rgba(15,23,42,0.2)", maxHeight: "92vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#0F172A" }}>{form.id ? "✏️ Editar Demanda" : "✨ Nova Demanda"}</h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, color: "#94A3B8", cursor: "pointer" }}>✕</button>
+      <div style={{ background: "#fff", borderRadius: 16, width: 560, maxWidth: "95vw", boxShadow: "0 24px 60px rgba(15,23,42,0.2)", maxHeight: "92vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{ padding: "20px 24px 0", borderBottom: "1px solid #F1F5F9" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+            <div style={{ flex: 1, marginRight: 12 }}>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#0F172A" }}>{form.id ? form.title || "Editar Demanda" : "✨ Nova Demanda"}</h2>
+              {form.id && <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <span style={{ fontSize: 11, background: ss.bg, color: ss.text, padding: "2px 9px", borderRadius: 999, fontWeight: 600, border: `1px solid ${ss.border}` }}>{form.status}</span>
+              </div>}
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, color: "#94A3B8", cursor: "pointer", flexShrink: 0 }}>✕</button>
+          </div>
+          {form.id && (
+            <div style={{ display: "flex", gap: 2 }}>
+              {[["form", "✏️ Editar"], ["history", `📋 Histórico (${comments.length})`]].map(([v, l]) => (
+                <button key={v} onClick={() => setActiveTab(v)} style={{ padding: "6px 14px", borderRadius: "6px 6px 0 0", border: "none", background: activeTab === v ? "#fff" : "transparent", color: activeTab === v ? "#1E3A8A" : "#64748B", fontWeight: activeTab === v ? 700 : 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit", borderBottom: activeTab === v ? "2px solid #3B82F6" : "2px solid transparent" }}>{l}</button>
+              ))}
+            </div>
+          )}
         </div>
-        <div style={{ display: "grid", gap: 14 }}>
-          <div><label style={L}>Título</label><input style={I} value={form.title} onChange={e => set("title", e.target.value)} placeholder="Descreva a demanda..." /></div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div><label style={L}>Setor</label><select style={I} value={form.sector} onChange={e => set("sector", e.target.value)}>{SECTORS.map(s => <option key={s.id} value={s.id}>{s.icon} {s.label}</option>)}</select></div>
-            <div><label style={L}>Responsável</label><select style={I} value={form.person} onChange={e => set("person", e.target.value)}>{PEOPLE.map(p => <option key={p}>{p}</option>)}</select></div>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div><label style={L}>Prioridade</label><select style={I} value={form.priority} onChange={e => set("priority", e.target.value)}>{PRIORITIES.map(p => <option key={p}>{p}</option>)}</select></div>
-            <div><label style={L}>Canal</label><select style={I} value={form.channel} onChange={e => set("channel", e.target.value)}>{CHANNELS.map(c => <option key={c}>{CHANNEL_ICONS[c]} {c}</option>)}</select></div>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div><label style={L}>Status</label><select style={I} value={form.status} onChange={e => set("status", e.target.value)}>{STATUSES.map(s => <option key={s}>{s}</option>)}</select></div>
-            <div><label style={L}>Data</label><input type="date" style={I} value={form.date} onChange={e => set("date", e.target.value)} /></div>
-          </div>
-          <div><label style={L}>Observação</label><textarea style={{ ...I, resize: "vertical", minHeight: 68 }} value={form.obs} onChange={e => set("obs", e.target.value)} placeholder="Observações..." /></div>
+
+        <div style={{ overflowY: "auto", flex: 1, padding: "20px 24px" }}>
+          {/* FORM TAB */}
+          {activeTab === "form" && (
+            <div style={{ display: "grid", gap: 14 }}>
+              <div><label style={L}>Título</label><input style={I} value={form.title} onChange={e => set("title", e.target.value)} placeholder="Descreva a demanda..." /></div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div><label style={L}>Setor</label><select style={I} value={form.sector} onChange={e => set("sector", e.target.value)}>{SECTORS.map(s => <option key={s.id} value={s.id}>{s.icon} {s.label}</option>)}</select></div>
+                <div><label style={L}>Responsável</label><select style={I} value={form.person} onChange={e => set("person", e.target.value)}>{PEOPLE.map(p => <option key={p}>{p}</option>)}</select></div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div><label style={L}>Prioridade</label><select style={I} value={form.priority} onChange={e => set("priority", e.target.value)}>{PRIORITIES.map(p => <option key={p}>{p}</option>)}</select></div>
+                <div><label style={L}>Canal</label><select style={I} value={form.channel} onChange={e => set("channel", e.target.value)}>{CHANNELS.map(c => <option key={c}>{CHANNEL_ICONS[c]} {c}</option>)}</select></div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div><label style={L}>Status</label><select style={I} value={form.status} onChange={e => set("status", e.target.value)}>{STATUSES.map(s => <option key={s}>{s}</option>)}</select></div>
+                <div><label style={L}>Data</label><input type="date" style={I} value={form.date} onChange={e => set("date", e.target.value)} /></div>
+              </div>
+              <div><label style={L}>Observação</label><textarea style={{ ...I, resize: "vertical", minHeight: 68 }} value={form.obs} onChange={e => set("obs", e.target.value)} placeholder="Observações..." /></div>
+            </div>
+          )}
+
+          {/* HISTORY TAB */}
+          {activeTab === "history" && (
+            <div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 0, marginBottom: 20 }}>
+                {comments.length === 0 && (
+                  <div style={{ textAlign: "center", padding: "30px 0", color: "#94A3B8", fontSize: 13 }}>Nenhum registro ainda. Adicione o primeiro abaixo!</div>
+                )}
+                {[...comments].reverse().map((c, i) => (
+                  <div key={c.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", paddingBottom: i < comments.length - 1 ? 16 : 0 }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#3B82F6", marginTop: 5, flexShrink: 0 }} />
+                      {i < comments.length - 1 && <div style={{ width: 1, flex: 1, background: "#E2E8F0", margin: "4px 0", minHeight: 24 }} />}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, color: "#1E293B", lineHeight: 1.5 }}>{c.text}</div>
+                      <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 3 }}>{c.author} · {c.ts}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: 14 }}>
+                <label style={L}>Adicionar registro</label>
+                <textarea value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Ex: Aprovado pela Mikaeli · Aguardando arte final · Publicado hoje..." style={{ ...I, resize: "vertical", minHeight: 72 }} />
+                <button onClick={addComment} disabled={!newComment.trim()} style={{ marginTop: 8, padding: "8px 18px", borderRadius: 8, border: "none", background: newComment.trim() ? "linear-gradient(135deg,#1E3A8A,#3B82F6)" : "#CBD5E1", color: "#fff", cursor: newComment.trim() ? "pointer" : "not-allowed", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>Registrar</button>
+              </div>
+            </div>
+          )}
         </div>
-        <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+
+        <div style={{ padding: "14px 24px", borderTop: "1px solid #E2E8F0", display: "flex", gap: 10, justifyContent: "flex-end", background: "#F8FAFC" }}>
           <button onClick={onClose} style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", cursor: "pointer", fontWeight: 600, fontSize: 13, fontFamily: "inherit" }}>Cancelar</button>
           <button onClick={() => form.title.trim() && onSave(form)} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>Salvar</button>
         </div>
@@ -197,10 +262,11 @@ function KCard({ task, onEdit, onDelete }) {
   const fmt = d => d ? new Date(d + "T12:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) : null;
   const over = task.date && new Date(task.date) < new Date() && task.status !== "Concluído";
   const sec = SECTORS.find(s => s.id === task.sector);
+  const ss = STATUS_STYLE[task.status] || STATUS_STYLE["A fazer"];
   return (
-    <div style={{ background: "#fff", borderRadius: 10, padding: "12px 14px", boxShadow: "0 1px 4px rgba(15,23,42,0.07)", borderLeft: `3px solid ${PRIORITY_STYLE[task.priority].dot}`, transition: "all 0.15s" }}
-      onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 16px rgba(15,23,42,0.11)"; }}
-      onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 1px 4px rgba(15,23,42,0.07)"; }}>
+    <div style={{ background: ss.cardBg, borderRadius: 10, padding: "12px 14px", boxShadow: "0 1px 4px rgba(15,23,42,0.06)", borderLeft: `3px solid ${ss.accent}`, border: `1px solid ${ss.border}`, borderLeftWidth: 3, transition: "all 0.15s" }}
+      onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 16px rgba(15,23,42,0.10)"; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 1px 4px rgba(15,23,42,0.06)"; }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6, marginBottom: 8 }}>
         <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#1E293B", lineHeight: 1.4 }}>{task.title}</p>
         <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
@@ -216,7 +282,7 @@ function KCard({ task, onEdit, onDelete }) {
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}><Avatar name={task.person} size={22} /><span style={{ fontSize: 11, color: "#64748B" }}>{CHANNEL_ICONS[task.channel]} {task.channel}</span></div>
         {task.date && <span style={{ fontSize: 11, color: over ? "#DC2626" : "#94A3B8", fontWeight: over ? 700 : 400 }}>{over ? "⚠ " : "📅 "}{fmt(task.date)}</span>}
       </div>
-      {task.obs && <p style={{ margin: "8px 0 0", fontSize: 11, color: "#94A3B8", fontStyle: "italic", borderTop: "1px solid #F1F5F9", paddingTop: 6 }}>{task.obs.length > 55 ? task.obs.slice(0, 55) + "…" : task.obs}</p>}
+      {task.obs && <p style={{ margin: "8px 0 0", fontSize: 11, color: ss.accent, fontStyle: "italic", borderTop: `1px solid ${ss.border}`, paddingTop: 6, opacity: 0.8 }}>{task.obs.length > 55 ? task.obs.slice(0, 55) + "…" : task.obs}</p>}
     </div>
   );
 }
@@ -1292,6 +1358,7 @@ function FixasPage() {
                           </button>
                           <button onClick={() => setModal(item)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>✏️</button>
                           <button onClick={() => toggleActive(item)} title={item.active ? "Pausar rotina" : "Ativar rotina"} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>{item.active ? "⏸" : "▶️"}</button>
+                          <button onClick={async () => { if (window.confirm("Excluir esta rotina permanentemente?")) { await supabase.from("demandas_fixas").delete().eq("id", item.id); load(); } }} style={{ background: "none", border: "1px solid #FECACA", borderRadius: 6, cursor: "pointer", fontSize: 11, color: "#DC2626", padding: "3px 8px", fontFamily: "inherit" }}>Excluir</button>
                         </div>
                       </div>
                       {isExp && (
