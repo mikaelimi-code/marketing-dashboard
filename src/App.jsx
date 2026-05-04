@@ -268,45 +268,236 @@ function SetoresView({ tasks, onEdit, onDelete, onNewTask }) {
 }
 
 // ── INSTAGRAM PANEL ───────────────────────────────────────────────────────────
+const DEMO_INSIGHTS = {
+  profile: { username: "mikaeliscudeler.advogada", followers_count: 8420, media_count: 312, biography: "Advogada | Previdência Internacional 🇧🇷🇪🇸 | Vistos para a Espanha" },
+  growth: [
+    { week: "Sem 13", followers: 7980 }, { week: "Sem 14", followers: 8105 }, { week: "Sem 15", followers: 8230 }, { week: "Sem 16", followers: 8420 },
+  ],
+  metrics: { reach: 48200, impressions: 124000, engagement_rate: 4.2, profile_views: 3840, website_clicks: 890, saves: 1240 },
+  top_posts: [
+    { id: "p1", caption: "Você sabia que dá para se aposentar pelo Brasil mesmo morando na Espanha? 🇪🇸🇧🇷", media_type: "VIDEO", timestamp: "2025-04-20", like_count: 847, comments_count: 93, saves: 412, reach: 18400, engagement_rate: 7.3 },
+    { id: "p2", caption: "Os 3 erros mais comuns no CNIS que podem atrasar sua aposentadoria 🚨", media_type: "CAROUSEL_ALBUM", timestamp: "2025-04-18", like_count: 623, comments_count: 48, saves: 298, reach: 12100, engagement_rate: 5.8 },
+    { id: "p3", caption: "Visto D7 Portugal vs Visto Nômade Espanha — qual escolher em 2025? ⚡", media_type: "VIDEO", timestamp: "2025-04-15", like_count: 541, comments_count: 67, saves: 231, reach: 9800, engagement_rate: 5.2 },
+    { id: "p4", caption: "Como calcular seu tempo de contribuição sendo brasileiro no exterior 📊", media_type: "CAROUSEL_ALBUM", timestamp: "2025-04-10", like_count: 389, comments_count: 31, saves: 187, reach: 7200, engagement_rate: 4.1 },
+    { id: "p5", caption: "Método PREV: o caminho para sua aposentadoria mesmo morando fora 🎯", media_type: "IMAGE", timestamp: "2025-04-08", like_count: 298, comments_count: 24, saves: 143, reach: 5900, engagement_rate: 3.8 },
+  ],
+};
+
+function InsightsPanel({ token, mode }) {
+  const [data, setData] = useState(DEMO_INSIGHTS);
+  const [loading, setLoading] = useState(false);
+  const mIcon = t => t === "VIDEO" ? "🎥" : t === "CAROUSEL_ALBUM" ? "🖼️" : "📷";
+
+  const fetchInsights = async () => {
+    if (!token || mode !== "real") return;
+    setLoading(true);
+    try {
+      const profileRes = await fetch(`https://graph.instagram.com/me?fields=username,followers_count,media_count,biography&access_token=${token}`);
+      const profile = await profileRes.json();
+      const mediaRes = await fetch(`https://graph.instagram.com/me/media?fields=id,caption,media_type,timestamp,like_count,comments_count&limit=5&access_token=${token}`);
+      const media = await mediaRes.json();
+      const insightsRes = await fetch(`https://graph.instagram.com/me/insights?metric=reach,impressions,profile_views,website_clicks&period=week&access_token=${token}`);
+      const insights = await insightsRes.json();
+      const reach = insights.data?.find(m => m.name === "reach")?.values?.slice(-1)[0]?.value || 0;
+      const impressions = insights.data?.find(m => m.name === "impressions")?.values?.slice(-1)[0]?.value || 0;
+      const profile_views = insights.data?.find(m => m.name === "profile_views")?.values?.slice(-1)[0]?.value || 0;
+      const website_clicks = insights.data?.find(m => m.name === "website_clicks")?.values?.slice(-1)[0]?.value || 0;
+      setData({ profile, metrics: { reach, impressions, profile_views, website_clicks, engagement_rate: 0, saves: 0 }, top_posts: (media.data || []).map(p => ({ ...p, saves: 0, reach: 0, engagement_rate: 0 })), growth: data.growth });
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  };
+
+  useEffect(() => { if (mode === "real" && token) fetchInsights(); }, [mode, token]);
+
+  const followerGrowth = data.growth.length >= 2 ? data.growth[data.growth.length - 1].followers - data.growth[data.growth.length - 2].followers : 0;
+  const maxFollowers = Math.max(...data.growth.map(g => g.followers));
+  const minFollowers = Math.min(...data.growth.map(g => g.followers));
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#94A3B8" }}>⏳ Carregando insights...</div>;
+
+  return (
+    <div>
+      {/* Profile header */}
+      <div style={{ background: "linear-gradient(135deg,#FDF2F8,#FCE7F3)", borderRadius: 14, padding: "16px 20px", marginBottom: 20, border: "1.5px solid #FBCFE8", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ width: 56, height: 56, borderRadius: "50%", background: "linear-gradient(135deg,#E1306C,#833AB4)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 22, fontWeight: 700, flexShrink: 0 }}>M</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#1E293B" }}>@{data.profile.username}</div>
+          <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>{data.profile.biography}</div>
+        </div>
+        <div style={{ display: "flex", gap: 20 }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#E1306C" }}>{data.profile.followers_count?.toLocaleString("pt-BR")}</div>
+            <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>Seguidores</div>
+            {followerGrowth > 0 && <div style={{ fontSize: 11, color: "#059669", fontWeight: 700 }}>▲ +{followerGrowth} esta sem.</div>}
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#6366F1" }}>{data.profile.media_count}</div>
+            <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>Posts</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#F59E0B" }}>{data.metrics.engagement_rate}%</div>
+            <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>Engajamento</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Metrics grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 12, marginBottom: 20 }}>
+        {[
+          ["👁", "Alcance semanal", data.metrics.reach?.toLocaleString("pt-BR"), "#3B82F6", "#EFF6FF"],
+          ["📡", "Impressões", data.metrics.impressions?.toLocaleString("pt-BR"), "#6366F1", "#EEF2FF"],
+          ["👤", "Visitas ao perfil", data.metrics.profile_views?.toLocaleString("pt-BR"), "#EC4899", "#FDF2F8"],
+          ["🔗", "Cliques no link", data.metrics.website_clicks?.toLocaleString("pt-BR"), "#059669", "#ECFDF5"],
+          ["🔖", "Salvamentos", data.metrics.saves?.toLocaleString("pt-BR"), "#F59E0B", "#FFFBEB"],
+        ].map(([icon, label, value, color, bg]) => (
+          <div key={label} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", border: `1.5px solid ${bg}`, boxShadow: "0 1px 4px rgba(15,23,42,0.05)" }}>
+            <div style={{ fontSize: 20, marginBottom: 6 }}>{icon}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color }}>{value || "—"}</div>
+            <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Follower growth chart */}
+      <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #E2E8F0", padding: "16px 20px", marginBottom: 20 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#1E293B", marginBottom: 14 }}>📈 Crescimento de seguidores</div>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 12, height: 80 }}>
+          {data.growth.map((g, i) => {
+            const pct = maxFollowers === minFollowers ? 80 : 20 + ((g.followers - minFollowers) / (maxFollowers - minFollowers)) * 60;
+            const isLast = i === data.growth.length - 1;
+            return (
+              <div key={g.week} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: isLast ? "#E1306C" : "#94A3B8" }}>{g.followers?.toLocaleString("pt-BR")}</div>
+                <div style={{ width: "100%", height: `${pct}px`, background: isLast ? "linear-gradient(135deg,#E1306C,#F472B6)" : "#E2E8F0", borderRadius: "4px 4px 0 0", transition: "height 0.5s ease" }} />
+                <div style={{ fontSize: 10, color: "#94A3B8" }}>{g.week}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Top posts */}
+      <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #E2E8F0", overflow: "hidden" }}>
+        <div style={{ padding: "14px 20px", borderBottom: "1px solid #F1F5F9", fontSize: 14, fontWeight: 700, color: "#1E293B" }}>🏆 Top posts do período</div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
+              {["", "Conteúdo", "❤️ Curtidas", "💬 Coment.", "🔖 Salvos", "👁 Alcance", "📊 Engaj."].map(h => (
+                <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#64748B", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.top_posts.map((p, i) => (
+              <tr key={p.id} style={{ borderBottom: "1px solid #F1F5F9", background: i === 0 ? "#FFF5F7" : i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
+                <td style={{ padding: "10px 12px", fontSize: 16 }}>{mIcon(p.media_type)}</td>
+                <td style={{ padding: "10px 12px", maxWidth: 220 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#1E293B" }}>{p.caption?.length > 60 ? p.caption.slice(0, 60) + "…" : p.caption}</div>
+                  <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 2 }}>{p.timestamp}</div>
+                </td>
+                <td style={{ padding: "10px 12px", fontWeight: 700, color: "#E1306C" }}>{p.like_count?.toLocaleString("pt-BR")}</td>
+                <td style={{ padding: "10px 12px", fontWeight: 600, color: "#475569" }}>{p.comments_count?.toLocaleString("pt-BR")}</td>
+                <td style={{ padding: "10px 12px", fontWeight: 600, color: "#F59E0B" }}>{p.saves?.toLocaleString("pt-BR")}</td>
+                <td style={{ padding: "10px 12px", fontWeight: 600, color: "#3B82F6" }}>{p.reach?.toLocaleString("pt-BR")}</td>
+                <td style={{ padding: "10px 12px" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: p.engagement_rate >= 5 ? "#059669" : p.engagement_rate >= 3 ? "#D97706" : "#DC2626", background: p.engagement_rate >= 5 ? "#D1FAE5" : p.engagement_rate >= 3 ? "#FEF3C7" : "#FEE2E2", padding: "2px 8px", borderRadius: 999 }}>{p.engagement_rate}%</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function InstaPanel({ onCreateTask }) {
   const [posts, setPosts] = useState(DEMO_POSTS);
-  const [token, setToken] = useState(""); const [mode, setMode] = useState("demo"); const [loading, setLoad] = useState(false); const [exp, setExp] = useState(null);
+  const [token, setToken] = useState("");
+  const [mode, setMode] = useState("demo");
+  const [loading, setLoad] = useState(false);
+  const [exp, setExp] = useState(null);
+  const [instaTab, setInstaTab] = useState("insights");
+
   const sorted = [...posts].sort((a, b) => b.comments.filter(c => !c.answered).length - a.comments.filter(c => !c.answered).length);
-  const fetchReal = async () => { if (!token.trim()) return; setLoad(true); try { const r = await fetch(`https://graph.instagram.com/me/media?fields=id,caption,media_type,timestamp&access_token=${token}`); const d = await r.json(); if (d.error) throw new Error(d.error.message); const en = await Promise.all(d.data.slice(0, 6).map(async p => { const cr = await fetch(`https://graph.instagram.com/${p.id}/comments?fields=id,text,timestamp,username&access_token=${token}`); const cd = await cr.json(); return { id: p.id, caption: p.caption || "", timestamp: p.timestamp?.split("T")[0], media_type: p.media_type, comments: (cd.data || []).map(c => ({ ...c, answered: false })) }; })); setPosts(en); setMode("real"); } catch (e) { alert("Erro: " + e.message); } setLoad(false); };
+  const fetchReal = async () => {
+    if (!token.trim()) return; setLoad(true);
+    try {
+      const r = await fetch(`https://graph.instagram.com/me/media?fields=id,caption,media_type,timestamp&access_token=${token}`);
+      const d = await r.json();
+      if (d.error) throw new Error(d.error.message);
+      const en = await Promise.all(d.data.slice(0, 6).map(async p => {
+        const cr = await fetch(`https://graph.instagram.com/${p.id}/comments?fields=id,text,timestamp,username&access_token=${token}`);
+        const cd = await cr.json();
+        return { id: p.id, caption: p.caption || "", timestamp: p.timestamp?.split("T")[0], media_type: p.media_type, comments: (cd.data || []).map(c => ({ ...c, answered: false })) };
+      }));
+      setPosts(en); setMode("real");
+    } catch (e) { alert("Erro: " + e.message); }
+    setLoad(false);
+  };
   const tog = (pid, cid) => setPosts(ps => ps.map(p => p.id !== pid ? p : { ...p, comments: p.comments.map(c => c.id !== cid ? c : { ...c, answered: !c.answered }) }));
   const mIcon = t => t === "VIDEO" ? "🎥" : t === "CAROUSEL_ALBUM" ? "🖼️" : "📷";
   return (
     <div>
+      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-        <div><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#1E293B" }}>📸 Monitoramento de Comentários</h3><p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748B" }}>{mode === "demo" ? "Modo demonstração · dados fictícios" : "✅ Conta real conectada"}</p></div>
-        <button onClick={() => setMode(m => m === "setup" ? "demo" : "setup")} style={{ fontSize: 12, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: mode === "real" ? "#D1FAE5" : "#fff", color: mode === "real" ? "#059669" : "#3B82F6", cursor: "pointer", fontWeight: 600, fontFamily: "inherit" }}>{mode === "real" ? "✅ Conectado" : "🔗 Conectar conta real"}</button>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#1E293B" }}>📸 Instagram — @mikaeliscudeler.advogada</h3>
+          <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748B" }}>{mode === "demo" ? "Modo demonstração · dados fictícios" : "✅ Conta real conectada"}</p>
+        </div>
+        <button onClick={() => setMode(m => m === "setup" ? "demo" : "setup")} style={{ fontSize: 12, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: mode === "real" ? "#D1FAE5" : "#fff", color: mode === "real" ? "#059669" : "#E1306C", cursor: "pointer", fontWeight: 600, fontFamily: "inherit" }}>{mode === "real" ? "✅ Conectado" : "🔗 Conectar conta real"}</button>
       </div>
-      {mode === "setup" && <div style={{ background: "#FFF7ED", border: "1.5px solid #FED7AA", borderRadius: 12, padding: 16, marginBottom: 16 }}><div style={{ fontSize: 13, fontWeight: 700, color: "#92400E", marginBottom: 6 }}>🔐 Conectar Instagram Business</div><p style={{ margin: "0 0 10px", fontSize: 12, color: "#78350F", lineHeight: 1.6 }}>Acesse <strong>developers.facebook.com → Graph API Explorer</strong>, gere token com <code>instagram_basic</code> e <code>instagram_manage_comments</code>.</p><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><input value={token} onChange={e => setToken(e.target.value)} placeholder="EAABw0xyz..." style={{ flex: 1, minWidth: 200, padding: "7px 10px", borderRadius: 8, border: "1.5px solid #FCD34D", fontSize: 12, fontFamily: "monospace", outline: "none" }} /><button onClick={fetchReal} disabled={loading} style={{ padding: "7px 16px", borderRadius: 8, border: "none", background: "#F59E0B", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>{loading ? "⏳" : "Conectar"}</button><button onClick={() => setMode("demo")} style={{ padding: "7px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Cancelar</button></div></div>}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 14 }}>
-        {sorted.map((post, idx) => {
-          const un = post.comments.filter(c => !c.answered);
-          const heat = Math.min(100, un.length * 18 + post.comments.length * 3);
-          const kw = post.comments.filter(c => !c.answered && KEYWORDS.some(k => c.text.toLowerCase().includes(k)));
-          const bc = heat >= 70 ? "#FCA5A5" : heat >= 40 ? "#FCD34D" : "#BBF7D0";
-          const isE = exp === post.id;
-          return (
-            <div key={post.id} style={{ background: "#fff", borderRadius: 12, border: `1.5px solid ${bc}`, padding: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 16 }}>{mIcon(post.media_type)}</span>{idx === 0 && <span style={{ fontSize: 9, background: "#FEE2E2", color: "#DC2626", padding: "2px 7px", borderRadius: 999, fontWeight: 800, textTransform: "uppercase" }}>⚡ Máx</span>}</div>
-                <span style={{ fontSize: 11, color: "#94A3B8" }}>{post.timestamp}</span>
-              </div>
-              <p style={{ margin: "0 0 10px", fontSize: 12, color: "#334155", lineHeight: 1.4 }}>{post.caption.length > 85 ? post.caption.slice(0, 85) + "…" : post.caption}</p>
-              <div style={{ marginBottom: 8 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#94A3B8", marginBottom: 4 }}><span>Score</span><span><strong style={{ color: "#475569" }}>{un.length}</strong> sem resposta · {post.comments.length} total</span></div><HBar score={heat} /></div>
-              {kw.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>{[...new Set(kw.flatMap(c => KEYWORDS.filter(k => c.text.toLowerCase().includes(k))))].slice(0, 4).map(k => <span key={k} style={{ fontSize: 10, background: "#FEF3C7", color: "#92400E", padding: "1px 7px", borderRadius: 999, fontWeight: 600 }}>"{k}"</span>)}</div>}
-              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                <button onClick={() => setExp(isE ? null : post.id)} style={{ flex: 1, padding: "6px", borderRadius: 7, border: "1.5px solid #E2E8F0", background: "#F8FAFC", color: "#475569", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}>{isE ? "▲ Fechar" : `▼ ${un.length} pendente${un.length !== 1 ? "s" : ""}`}</button>
-                {un.length > 0 && <button onClick={() => onCreateTask({ title: `Responder comentários — "${post.caption.slice(0, 35)}..."`, channel: "Instagram", priority: heat >= 70 ? "Urgente" : "Alta", person: "Gabi", status: "A fazer", sector: "redes", date: "", obs: `${un.length} comentários sem resposta` })} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: "inherit" }}>+ Demanda</button>}
-              </div>
-              {isE && <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: 10, marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>{post.comments.map(c => <div key={c.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", opacity: c.answered ? 0.38 : 1 }}><div style={{ width: 26, height: 26, borderRadius: "50%", background: "#EFF6FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#1E3A8A", flexShrink: 0 }}>{c.username[0].toUpperCase()}</div><div style={{ flex: 1 }}><div style={{ fontSize: 10, fontWeight: 700, color: "#475569" }}>@{c.username}</div><div style={{ fontSize: 12, color: "#334155" }}>{c.text}</div></div><button onClick={() => tog(post.id, c.id)} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 6, border: "1.5px solid #E2E8F0", background: c.answered ? "#D1FAE5" : "#fff", color: c.answered ? "#059669" : "#94A3B8", cursor: "pointer", fontWeight: 700, flexShrink: 0, fontFamily: "inherit" }}>{c.answered ? "✓" : "Marcar"}</button></div>)}</div>}
-            </div>
-          );
-        })}
+
+      {mode === "setup" && (
+        <div style={{ background: "#FFF7ED", border: "1.5px solid #FED7AA", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#92400E", marginBottom: 6 }}>🔐 Conectar Instagram Business</div>
+          <p style={{ margin: "0 0 10px", fontSize: 12, color: "#78350F", lineHeight: 1.6 }}>Acesse <strong>developers.facebook.com → Graph API Explorer</strong>, gere token com <code>instagram_basic</code>, <code>instagram_manage_insights</code> e <code>instagram_manage_comments</code>.</p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input value={token} onChange={e => setToken(e.target.value)} placeholder="EAABw0xyz..." style={{ flex: 1, minWidth: 200, padding: "7px 10px", borderRadius: 8, border: "1.5px solid #FCD34D", fontSize: 12, fontFamily: "monospace", outline: "none" }} />
+            <button onClick={fetchReal} disabled={loading} style={{ padding: "7px 16px", borderRadius: 8, border: "none", background: "#F59E0B", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>{loading ? "⏳" : "Conectar"}</button>
+            <button onClick={() => setMode("demo")} style={{ padding: "7px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-tabs */}
+      <div style={{ display: "flex", gap: 4, background: "#F1F5F9", borderRadius: 9, padding: 3, marginBottom: 20, width: "fit-content" }}>
+        {[["insights", "📊 Insights do perfil"], ["comentarios", "💬 Comentários"]].map(([v, l]) => (
+          <button key={v} onClick={() => setInstaTab(v)} style={{ padding: "6px 16px", borderRadius: 7, border: "none", background: instaTab === v ? "#fff" : "transparent", color: instaTab === v ? "#E1306C" : "#64748B", fontWeight: instaTab === v ? 700 : 500, fontSize: 13, cursor: "pointer", boxShadow: instaTab === v ? "0 1px 3px rgba(0,0,0,0.08)" : "none", fontFamily: "inherit" }}>{l}</button>
+        ))}
       </div>
+
+      {/* Insights tab */}
+      {instaTab === "insights" && <InsightsPanel token={token} mode={mode} />}
+
+      {/* Comentários tab */}
+      {instaTab === "comentarios" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 14 }}>
+          {sorted.map((post, idx) => {
+            const un = post.comments.filter(c => !c.answered);
+            const heat = Math.min(100, un.length * 18 + post.comments.length * 3);
+            const kw = post.comments.filter(c => !c.answered && KEYWORDS.some(k => c.text.toLowerCase().includes(k)));
+            const bc = heat >= 70 ? "#FCA5A5" : heat >= 40 ? "#FCD34D" : "#BBF7D0";
+            const isE = exp === post.id;
+            return (
+              <div key={post.id} style={{ background: "#fff", borderRadius: 12, border: `1.5px solid ${bc}`, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 16 }}>{mIcon(post.media_type)}</span>{idx === 0 && <span style={{ fontSize: 9, background: "#FEE2E2", color: "#DC2626", padding: "2px 7px", borderRadius: 999, fontWeight: 800, textTransform: "uppercase" }}>⚡ Máx</span>}</div>
+                  <span style={{ fontSize: 11, color: "#94A3B8" }}>{post.timestamp}</span>
+                </div>
+                <p style={{ margin: "0 0 10px", fontSize: 12, color: "#334155", lineHeight: 1.4 }}>{post.caption.length > 85 ? post.caption.slice(0, 85) + "…" : post.caption}</p>
+                <div style={{ marginBottom: 8 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#94A3B8", marginBottom: 4 }}><span>Score</span><span><strong style={{ color: "#475569" }}>{un.length}</strong> sem resposta · {post.comments.length} total</span></div><HBar score={heat} /></div>
+                {kw.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>{[...new Set(kw.flatMap(c => KEYWORDS.filter(k => c.text.toLowerCase().includes(k))))].slice(0, 4).map(k => <span key={k} style={{ fontSize: 10, background: "#FEF3C7", color: "#92400E", padding: "1px 7px", borderRadius: 999, fontWeight: 600 }}>"{k}"</span>)}</div>}
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <button onClick={() => setExp(isE ? null : post.id)} style={{ flex: 1, padding: "6px", borderRadius: 7, border: "1.5px solid #E2E8F0", background: "#F8FAFC", color: "#475569", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}>{isE ? "▲ Fechar" : `▼ ${un.length} pendente${un.length !== 1 ? "s" : ""}`}</button>
+                  {un.length > 0 && <button onClick={() => onCreateTask({ title: `Responder comentários — "${post.caption.slice(0, 35)}..."`, channel: "Instagram", priority: heat >= 70 ? "Urgente" : "Alta", person: "Gabi", status: "A fazer", sector: "redes", date: "", obs: `${un.length} comentários sem resposta` })} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: "inherit" }}>+ Demanda</button>}
+                </div>
+                {isE && <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: 10, marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>{post.comments.map(c => <div key={c.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", opacity: c.answered ? 0.38 : 1 }}><div style={{ width: 26, height: 26, borderRadius: "50%", background: "#EFF6FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#1E3A8A", flexShrink: 0 }}>{c.username[0].toUpperCase()}</div><div style={{ flex: 1 }}><div style={{ fontSize: 10, fontWeight: 700, color: "#475569" }}>@{c.username}</div><div style={{ fontSize: 12, color: "#334155" }}>{c.text}</div></div><button onClick={() => tog(post.id, c.id)} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 6, border: "1.5px solid #E2E8F0", background: c.answered ? "#D1FAE5" : "#fff", color: c.answered ? "#059669" : "#94A3B8", cursor: "pointer", fontWeight: 700, flexShrink: 0, fontFamily: "inherit" }}>{c.answered ? "✓" : "Marcar"}</button></div>)}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -791,6 +982,343 @@ function CalendarioPage() {
   );
 }
 
+
+// ── WHATSAPP NOTIFY ───────────────────────────────────────────────────────────
+const WA_NUMBERS = { Gabi: "5515997408935", Julia: "5515991032138" };
+function notifyWhatsApp(person, message) {
+  const num = WA_NUMBERS[person];
+  if (!num) return;
+  const url = `https://api.whatsapp.com/send?phone=${num}&text=${encodeURIComponent(message)}`;
+  window.open(url, "_blank");
+}
+
+// ── AGENDA PAGE ───────────────────────────────────────────────────────────────
+function AgendaPage({ tasks }) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  const nextWeek = new Date(today); nextWeek.setDate(nextWeek.getDate() + 7);
+
+  const fmtDate = d => d ? new Date(d + "T12:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }) : "—";
+  const fmtShort = d => d ? new Date(d + "T12:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) : "—";
+
+  const categorize = (task) => {
+    if (!task.date || task.status === "Concluído") return null;
+    const d = new Date(task.date + "T12:00"); d.setHours(0,0,0,0);
+    if (d < today) return "atrasado";
+    if (d.getTime() === today.getTime()) return "hoje";
+    if (d.getTime() === tomorrow.getTime()) return "amanha";
+    if (d <= nextWeek) return "semana";
+    return "futuro";
+  };
+
+  const groups = { atrasado: [], hoje: [], amanha: [], semana: [], futuro: [] };
+  tasks.forEach(t => { const cat = categorize(t); if (cat) groups[cat].push(t); });
+
+  const groupConfig = [
+    { key: "atrasado", label: "⚠️ Atrasadas", color: "#DC2626", bg: "#FEF2F2", border: "#FECACA" },
+    { key: "hoje",     label: "🔥 Hoje",       color: "#EA580C", bg: "#FFF7ED", border: "#FED7AA" },
+    { key: "amanha",   label: "⏰ Amanhã",      color: "#D97706", bg: "#FFFBEB", border: "#FDE68A" },
+    { key: "semana",   label: "📅 Esta semana", color: "#2563EB", bg: "#EFF6FF", border: "#BFDBFE" },
+    { key: "futuro",   label: "🗓 Próximas",    color: "#475569", bg: "#F8FAFC", border: "#E2E8F0" },
+  ];
+
+  // Calendar view - current month
+  const [calMonth, setCalMonth] = useState(new Date());
+  const [calView, setCalView] = useState("lista");
+
+  const firstDay = new Date(calMonth.getFullYear(), calMonth.getMonth(), 1);
+  const lastDay = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 0);
+  const startPad = firstDay.getDay();
+  const days = [];
+  for (let i = 0; i < startPad; i++) days.push(null);
+  for (let i = 1; i <= lastDay.getDate(); i++) days.push(i);
+
+  const tasksByDay = {};
+  tasks.forEach(t => {
+    if (!t.date || t.status === "Concluído") return;
+    const d = new Date(t.date + "T12:00");
+    if (d.getMonth() === calMonth.getMonth() && d.getFullYear() === calMonth.getFullYear()) {
+      const key = d.getDate();
+      if (!tasksByDay[key]) tasksByDay[key] = [];
+      tasksByDay[key].push(t);
+    }
+  });
+
+  const totalPending = groups.atrasado.length + groups.hoje.length + groups.amanha.length;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#1E293B" }}>🗓 Agenda de Demandas</h2>
+          <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748B" }}>
+            {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
+            {totalPending > 0 && <span style={{ marginLeft: 8, background: "#FEE2E2", color: "#DC2626", padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>⚡ {totalPending} urgente{totalPending > 1 ? "s" : ""}</span>}
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 3, background: "#F1F5F9", borderRadius: 8, padding: 3 }}>
+          {[["lista", "☰ Lista"], ["calendario", "📅 Calendário"]].map(([v, l]) => (
+            <button key={v} onClick={() => setCalView(v)} style={{ padding: "5px 14px", borderRadius: 6, border: "none", background: calView === v ? "#fff" : "transparent", color: calView === v ? "#1E3A8A" : "#64748B", fontWeight: calView === v ? 700 : 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {calView === "lista" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {groupConfig.map(g => {
+            const items = groups[g.key];
+            if (items.length === 0) return null;
+            return (
+              <div key={g.key}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: g.color }}>{g.label}</span>
+                  <span style={{ fontSize: 11, background: g.bg, color: g.color, padding: "1px 8px", borderRadius: 999, fontWeight: 600, border: `1px solid ${g.border}` }}>{items.length}</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {items.sort((a, b) => a.date > b.date ? 1 : -1).map(task => {
+                    const sec = SECTORS.find(s => s.id === task.sector);
+                    return (
+                      <div key={task.id} style={{ background: "#fff", borderRadius: 10, padding: "12px 16px", border: `1.5px solid ${g.border}`, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                        <div style={{ flex: 1, minWidth: 200 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "#1E293B" }}>{task.title}</div>
+                          {task.obs && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>{task.obs}</div>}
+                        </div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          {sec && <span style={{ fontSize: 10, background: sec.bg, color: sec.color, padding: "2px 7px", borderRadius: 999, fontWeight: 600 }}>{sec.icon} {sec.label}</span>}
+                          <span style={{ fontSize: 11, fontWeight: 600, color: g.color }}>📅 {fmtShort(task.date)}</span>
+                          <Avatar name={task.person} size={24} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          {Object.values(groups).every(g => g.length === 0) && (
+            <div style={{ textAlign: "center", padding: 60, color: "#94A3B8", fontSize: 14 }}>🎉 Nenhuma demanda pendente com data definida!</div>
+          )}
+        </div>
+      )}
+
+      {calView === "calendario" && (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #E2E8F0", overflow: "hidden" }}>
+          <div style={{ padding: "14px 20px", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <button onClick={() => setCalMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 8, padding: "4px 12px", cursor: "pointer", fontSize: 16, fontFamily: "inherit" }}>‹</button>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#fff", textTransform: "capitalize" }}>
+              {calMonth.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
+            </span>
+            <button onClick={() => setCalMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 8, padding: "4px 12px", cursor: "pointer", fontSize: 16, fontFamily: "inherit" }}>›</button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", background: "#F8FAFC" }}>
+            {["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"].map(d => (
+              <div key={d} style={{ padding: "8px 4px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>{d}</div>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", border: "1px solid #F1F5F9" }}>
+            {days.map((day, i) => {
+              const isToday = day && new Date().getDate() === day && new Date().getMonth() === calMonth.getMonth() && new Date().getFullYear() === calMonth.getFullYear();
+              const dayTasks = day ? (tasksByDay[day] || []) : [];
+              return (
+                <div key={i} style={{ minHeight: 80, padding: "6px 4px", borderRight: "1px solid #F1F5F9", borderBottom: "1px solid #F1F5F9", background: isToday ? "#EFF6FF" : "#fff" }}>
+                  {day && (
+                    <>
+                      <div style={{ fontSize: 12, fontWeight: isToday ? 800 : 500, color: isToday ? "#1E3A8A" : "#475569", marginBottom: 4, width: 22, height: 22, borderRadius: "50%", background: isToday ? "#3B82F6" : "transparent", color: isToday ? "#fff" : "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>{day}</div>
+                      {dayTasks.slice(0, 2).map(t => {
+                        const sec = SECTORS.find(s => s.id === t.sector);
+                        return <div key={t.id} style={{ fontSize: 9, background: sec?.bg || "#F1F5F9", color: sec?.color || "#475569", borderRadius: 4, padding: "1px 4px", marginBottom: 2, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", fontWeight: 600 }}>{t.title}</div>;
+                      })}
+                      {dayTasks.length > 2 && <div style={{ fontSize: 9, color: "#94A3B8" }}>+{dayTasks.length - 2} mais</div>}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── DEMANDAS FIXAS ────────────────────────────────────────────────────────────
+const FREQ_OPTS = ["Diária", "Semanal", "Mensal", "Por lançamento"];
+const FREQ_COLORS = { "Diária": { bg: "#FEE2E2", color: "#DC2626" }, "Semanal": { bg: "#DBEAFE", color: "#2563EB" }, "Mensal": { bg: "#D1FAE5", color: "#059669" }, "Por lançamento": { bg: "#FEF3C7", color: "#D97706" } };
+
+function FixaModal({ item, onSave, onClose }) {
+  const [form, setForm] = useState({ ...item });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const I = { width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 13, color: "#1E293B", background: "#F8FAFC", outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
+  const L = { fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4, display: "block" };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(4px)" }} onClick={onClose}>
+      <div style={{ background: "#fff", borderRadius: 16, padding: 28, width: 560, maxWidth: "95vw", boxShadow: "0 24px 60px rgba(15,23,42,0.2)", maxHeight: "92vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#0F172A" }}>📌 {form.id ? "Editar Rotina" : "Nova Rotina"}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, color: "#94A3B8", cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ display: "grid", gap: 14 }}>
+          <div><label style={L}>Nome da Rotina</label><input style={I} value={form.title} onChange={e => set("title", e.target.value)} placeholder="Ex: Responder comentários TikTok" /></div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div><label style={L}>Setor</label><select style={I} value={form.sector} onChange={e => set("sector", e.target.value)}>{SECTORS.map(s => <option key={s.id} value={s.id}>{s.icon} {s.label}</option>)}</select></div>
+            <div><label style={L}>Canal</label><select style={I} value={form.channel} onChange={e => set("channel", e.target.value)}>{CHANNELS.map(c => <option key={c}>{CHANNEL_ICONS[c]} {c}</option>)}</select></div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div><label style={L}>Responsável</label><select style={I} value={form.person} onChange={e => set("person", e.target.value)}><option value="">Em aberto</option>{PEOPLE.map(p => <option key={p}>{p}</option>)}<option value="Gabi/Julia">Gabi/Julia</option></select></div>
+            <div><label style={L}>Frequência</label><select style={I} value={form.frequency} onChange={e => set("frequency", e.target.value)}>{FREQ_OPTS.map(f => <option key={f}>{f}</option>)}</select></div>
+          </div>
+          <div>
+            <label style={L}>📖 Como fazer — Passo a passo</label>
+            <textarea style={{ ...I, resize: "vertical", minHeight: 140, lineHeight: 1.6 }} value={form.how_to} onChange={e => set("how_to", e.target.value)} placeholder={"Documente o passo a passo aqui:\n\n1. Abrir o Instagram\n2. Verificar comentários novos\n3. Responder priorizando leads com dúvidas\n4. Chamar no privado quem demonstrou interesse..."} />
+            <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4 }}>💡 Este espaço garante que qualquer pessoa da equipe consiga realizar a tarefa, mesmo sem experiência prévia.</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", cursor: "pointer", fontWeight: 600, fontSize: 13, fontFamily: "inherit" }}>Cancelar</button>
+          <button onClick={() => form.title.trim() && onSave(form)} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>Salvar Rotina</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FixasPage() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null);
+  const [expanded, setExpanded] = useState(null);
+  const [filterFreq, setFilterFreq] = useState("");
+  const [filterPerson, setFilterPerson] = useState("");
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("demandas_fixas").select("*").order("frequency").order("title");
+    if (data) setItems(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (form) => {
+    const payload = { title: form.title, sector: form.sector, channel: form.channel, person: form.person, frequency: form.frequency, how_to: form.how_to, active: form.active !== false };
+    if (form.id) await supabase.from("demandas_fixas").update(payload).eq("id", form.id);
+    else await supabase.from("demandas_fixas").insert(payload);
+    setModal(null);
+    load();
+  };
+
+  const toggleActive = async (item) => {
+    await supabase.from("demandas_fixas").update({ active: !item.active }).eq("id", item.id);
+    load();
+  };
+
+  const filtered = items.filter(i =>
+    (!filterFreq || i.frequency === filterFreq) &&
+    (!filterPerson || i.person === filterPerson)
+  );
+
+  const grouped = FREQ_OPTS.reduce((acc, f) => {
+    acc[f] = filtered.filter(i => i.frequency === f);
+    return acc;
+  }, {});
+
+  const emptyFixa = () => ({ id: null, title: "", sector: "redes", channel: "Instagram", person: "Gabi", frequency: "Diária", how_to: "", active: true });
+
+  if (loading) return <div style={{ textAlign: "center", padding: 60, color: "#94A3B8" }}>⏳ Carregando rotinas...</div>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#1E293B" }}>📌 Rotinas & Demandas Fixas</h2>
+          <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748B" }}>Manual operacional da equipe · {items.filter(i => i.active).length} rotinas ativas</p>
+        </div>
+        <button onClick={() => setModal(emptyFixa())} style={{ padding: "9px 18px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>+ Nova Rotina</button>
+      </div>
+
+      <div style={{ background: "linear-gradient(135deg,#FFF7ED,#FFEDD5)", borderRadius: 12, padding: "12px 16px", marginBottom: 18, border: "1.5px solid #FED7AA", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 20 }}>💡</span>
+        <div style={{ fontSize: 12, color: "#92400E", lineHeight: 1.5 }}>
+          <strong>Manual operacional vivo</strong> — Documente o "Como fazer" de cada rotina. Assim, qualquer pessoa da equipe consegue executar qualquer tarefa, mesmo sem ter feito antes. Clique em qualquer rotina para ver ou editar o passo a passo.
+        </div>
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #E2E8F0", padding: "10px 14px", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 18 }}>
+        <select value={filterFreq} onChange={e => setFilterFreq(e.target.value)} style={{ padding: "5px 8px", borderRadius: 7, border: `1.5px solid ${filterFreq ? "#3B82F6" : "#E2E8F0"}`, fontSize: 12, color: filterFreq ? "#1E3A8A" : "#64748B", background: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
+          <option value="">Todas — Frequência</option>
+          {FREQ_OPTS.map(f => <option key={f}>{f}</option>)}
+        </select>
+        <select value={filterPerson} onChange={e => setFilterPerson(e.target.value)} style={{ padding: "5px 8px", borderRadius: 7, border: `1.5px solid ${filterPerson ? "#3B82F6" : "#E2E8F0"}`, fontSize: 12, color: filterPerson ? "#1E3A8A" : "#64748B", background: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
+          <option value="">Todos — Responsável</option>
+          {PEOPLE.map(p => <option key={p}>{p}</option>)}
+        </select>
+        {(filterFreq || filterPerson) && <button onClick={() => { setFilterFreq(""); setFilterPerson(""); }} style={{ fontSize: 11, color: "#EF4444", background: "#FEE2E2", border: "none", padding: "4px 10px", borderRadius: 999, cursor: "pointer", fontWeight: 600, fontFamily: "inherit" }}>✕ Limpar</button>}
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "#94A3B8" }}>{filtered.length} rotina{filtered.length !== 1 ? "s" : ""}</span>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {FREQ_OPTS.map(freq => {
+          const group = grouped[freq];
+          if (group.length === 0) return null;
+          const fc = FREQ_COLORS[freq] || { bg: "#F1F5F9", color: "#475569" };
+          return (
+            <div key={freq}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, background: fc.bg, color: fc.color, padding: "3px 12px", borderRadius: 999 }}>{freq === "Diária" ? "🔄" : freq === "Semanal" ? "📆" : freq === "Mensal" ? "🗓" : "🚀"} {freq}</span>
+                <span style={{ fontSize: 11, color: "#94A3B8" }}>{group.length} rotina{group.length !== 1 ? "s" : ""}</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {group.map(item => {
+                  const sec = SECTORS.find(s => s.id === item.sector);
+                  const isExp = expanded === item.id;
+                  const hasHowTo = item.how_to && item.how_to.trim().length > 0;
+                  return (
+                    <div key={item.id} style={{ background: "#fff", borderRadius: 12, border: "1.5px solid #E2E8F0", overflow: "hidden", opacity: item.active ? 1 : 0.5, transition: "opacity 0.2s" }}>
+                      <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <div style={{ flex: 1, minWidth: 160 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "#1E293B", display: "flex", alignItems: "center", gap: 6 }}>
+                            {item.title}
+                            {hasHowTo && <span style={{ fontSize: 9, background: "#D1FAE5", color: "#059669", padding: "1px 6px", borderRadius: 999, fontWeight: 700 }}>✓ Documentado</span>}
+                            {!hasHowTo && <span style={{ fontSize: 9, background: "#FEE2E2", color: "#DC2626", padding: "1px 6px", borderRadius: 999, fontWeight: 700 }}>! Sem passo a passo</span>}
+                          </div>
+                          <div style={{ display: "flex", gap: 6, marginTop: 5, flexWrap: "wrap" }}>
+                            {sec && <span style={{ fontSize: 10, background: sec.bg, color: sec.color, padding: "1px 7px", borderRadius: 999, fontWeight: 600 }}>{sec.icon} {sec.label}</span>}
+                            <span style={{ fontSize: 10, background: "#F1F5F9", color: "#475569", padding: "1px 7px", borderRadius: 999, fontWeight: 500 }}>{CHANNEL_ICONS[item.channel]} {item.channel}</span>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          {item.person ? <div style={{ display: "flex", alignItems: "center", gap: 5 }}><Avatar name={item.person.split("/")[0]} size={24} /><span style={{ fontSize: 12, color: "#475569" }}>{item.person}</span></div> : <span style={{ fontSize: 12, color: "#94A3B8", fontStyle: "italic" }}>Em aberto</span>}
+                          <button onClick={() => setExpanded(isExp ? null : item.id)} style={{ padding: "5px 12px", borderRadius: 7, border: "1.5px solid #E2E8F0", background: isExp ? "#EFF6FF" : "#F8FAFC", color: isExp ? "#1E3A8A" : "#475569", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}>
+                            {isExp ? "▲ Fechar" : "📖 Ver passo a passo"}
+                          </button>
+                          <button onClick={() => setModal(item)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>✏️</button>
+                          <button onClick={() => toggleActive(item)} title={item.active ? "Pausar rotina" : "Ativar rotina"} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>{item.active ? "⏸" : "▶️"}</button>
+                        </div>
+                      </div>
+                      {isExp && (
+                        <div style={{ padding: "14px 16px", background: "#F8FAFC", borderTop: "1px solid #E2E8F0" }}>
+                          {hasHowTo ? (
+                            <div style={{ fontSize: 13, color: "#334155", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{item.how_to}</div>
+                          ) : (
+                            <div style={{ textAlign: "center", padding: "20px 0" }}>
+                              <div style={{ fontSize: 13, color: "#94A3B8", marginBottom: 10 }}>Ainda não tem passo a passo documentado.</div>
+                              <button onClick={() => setModal(item)} style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>📝 Documentar agora</button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {modal && <FixaModal item={modal} onSave={save} onClose={() => setModal(null)} />}
+    </div>
+  );
+}
+
 // ── MAIN DASHBOARD ────────────────────────────────────────────────────────────
 export default function App() {
   const [tasks, setTasks] = useState([]);
@@ -834,7 +1362,7 @@ export default function App() {
 
   const stats = useMemo(() => STATUSES.map(s => ({ label: s, count: tasks.filter(t => t.status === s).length, ...STATUS_STYLE[s] })), [tasks]);
   const fmtDate = d => d ? new Date(d + "T12:00").toLocaleDateString("pt-BR") : "—";
-  const TABS = [["demandas", "📋 Demandas"], ["calendario", "📅 Calendário"], ["instagram", "📸 Instagram"], ["relatorios", "📊 Relatórios"]];
+  const TABS = [["demandas", "📋 Demandas"], ["agenda", "🗓 Agenda"], ["fixas", "📌 Rotinas"], ["calendario", "📅 Calendário"], ["instagram", "📸 Instagram"], ["relatorios", "📊 Relatórios"]];
 
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#1E293B" }}>
@@ -903,6 +1431,8 @@ export default function App() {
             )}
           </>
         )}
+        {tab === "agenda" && <AgendaPage tasks={tasks} />}
+        {tab === "fixas" && <FixasPage />}
         {tab === "calendario" && <CalendarioPage />}
         {tab === "instagram" && <InstaPanel onCreateTask={task => { saveTask({ ...task, id: null }); setTab("demandas"); }} />}
         {tab === "relatorios" && <ReportsPage />}
