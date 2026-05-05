@@ -1387,6 +1387,398 @@ function FixasPage() {
 }
 
 
+
+// ── PARCERIAS ─────────────────────────────────────────────────────────────────
+const PARCERIA_TIPOS = ["Escola de idiomas", "Contador/Financeiro", "Advogado/Escritório", "Infoprodutor/Criador", "Câmbio/Remessas", "Agência de Imigração", "Outro"];
+const PARCERIA_STATUS = ["Prospecção", "Contato feito", "Proposta enviada", "Contrato enviado", "Ativo", "Pausado", "Encerrado"];
+const PARCERIA_MODELO = ["Comissão por indicação", "Permuta de conteúdo", "Contrato fixo mensal", "Parceria pontual", "Outro"];
+
+const PARCERIA_STATUS_STYLE = {
+  "Prospecção":       { bg: "#F1F5F9", color: "#475569", dot: "#94A3B8" },
+  "Contato feito":    { bg: "#EEF2FF", color: "#4338CA", dot: "#6366F1" },
+  "Proposta enviada": { bg: "#FEF3C7", color: "#92400E", dot: "#F59E0B" },
+  "Contrato enviado": { bg: "#DBEAFE", color: "#1D4ED8", dot: "#3B82F6" },
+  "Ativo":            { bg: "#D1FAE5", color: "#065F46", dot: "#10B981" },
+  "Pausado":          { bg: "#FEF3C7", color: "#92400E", dot: "#F59E0B" },
+  "Encerrado":        { bg: "#FEE2E2", color: "#991B1B", dot: "#EF4444" },
+};
+
+const PIPELINE_STEPS = ["Prospecção", "Contato feito", "Proposta enviada", "Contrato enviado", "Ativo"];
+
+const emptyParceria = () => ({
+  id: null, nome: "", tipo: "", contato_nome: "", contato_email: "",
+  contato_whatsapp: "", contato_instagram: "", status: "Prospecção",
+  modelo_financeiro: "", valor: "", data_inicio: "", data_vencimento: "",
+  renovacao_automatica: false, leads_gerados: 0, vendas_geradas: 0,
+  obs: "", historico: [],
+});
+
+function ParceriaModal({ item, onSave, onClose }) {
+  const [form, setForm] = useState({ ...item, historico: item.historico || [] });
+  const [activeTab, setActiveTab] = useState("info");
+  const [newComment, setNewComment] = useState("");
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const addHistorico = () => {
+    if (!newComment.trim()) return;
+    const entry = { id: Date.now(), text: newComment.trim(), ts: new Date().toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) };
+    setForm(f => ({ ...f, historico: [...(f.historico || []), entry] }));
+    setNewComment("");
+  };
+
+  const I = { width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 13, color: "#1E293B", background: "#F8FAFC", outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
+  const L = { fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4, display: "block" };
+  const ss = PARCERIA_STATUS_STYLE[form.status] || PARCERIA_STATUS_STYLE["Prospecção"];
+
+  // Vencimento alert
+  const diasVenc = form.data_vencimento ? Math.ceil((new Date(form.data_vencimento) - new Date()) / 86400000) : null;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(4px)" }} onClick={onClose}>
+      <div style={{ background: "#fff", borderRadius: 16, width: 600, maxWidth: "97vw", boxShadow: "0 24px 60px rgba(15,23,42,0.2)", maxHeight: "94vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{ padding: "20px 24px 0", borderBottom: "1px solid #F1F5F9" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+            <div style={{ flex: 1, marginRight: 12 }}>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#0F172A" }}>{form.id ? form.nome || "Editar Parceria" : "🤝 Nova Parceria"}</h2>
+              {form.id && (
+                <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11, background: ss.bg, color: ss.color, padding: "2px 9px", borderRadius: 999, fontWeight: 600 }}>
+                    <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: ss.dot, marginRight: 4 }} />{form.status}
+                  </span>
+                  {form.tipo && <span style={{ fontSize: 11, background: "#F1F5F9", color: "#475569", padding: "2px 9px", borderRadius: 999 }}>{form.tipo}</span>}
+                  {diasVenc !== null && diasVenc <= 30 && (
+                    <span style={{ fontSize: 11, background: diasVenc <= 7 ? "#FEE2E2" : "#FEF3C7", color: diasVenc <= 7 ? "#DC2626" : "#D97706", padding: "2px 9px", borderRadius: 999, fontWeight: 700 }}>
+                      {diasVenc <= 0 ? "⚠️ Vencido!" : `⏰ Vence em ${diasVenc}d`}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, color: "#94A3B8", cursor: "pointer" }}>✕</button>
+          </div>
+          {form.id && (
+            <div style={{ display: "flex", gap: 2 }}>
+              {[["info", "📋 Informações"], ["financeiro", "💰 Financeiro"], ["resultados", "📊 Resultados"], ["historico", `💬 Histórico (${(form.historico||[]).length})`]].map(([v, l]) => (
+                <button key={v} onClick={() => setActiveTab(v)} style={{ padding: "6px 12px", borderRadius: "6px 6px 0 0", border: "none", background: activeTab === v ? "#fff" : "transparent", color: activeTab === v ? "#1E3A8A" : "#64748B", fontWeight: activeTab === v ? 700 : 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit", borderBottom: activeTab === v ? "2px solid #3B82F6" : "2px solid transparent" }}>{l}</button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ overflowY: "auto", flex: 1, padding: "20px 24px" }}>
+
+          {/* INFO TAB */}
+          {(activeTab === "info" || !form.id) && (
+            <div style={{ display: "grid", gap: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div><label style={L}>Nome do Parceiro / Empresa</label><input style={I} value={form.nome} onChange={e => set("nome", e.target.value)} placeholder="Ex: Escola de Espanhol Madrid" /></div>
+                <div><label style={L}>Tipo</label><select style={I} value={form.tipo} onChange={e => set("tipo", e.target.value)}><option value="">— Selecionar —</option>{PARCERIA_TIPOS.map(t => <option key={t}>{t}</option>)}</select></div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div><label style={L}>Status</label><select style={I} value={form.status} onChange={e => set("status", e.target.value)}>{PARCERIA_STATUS.map(s => <option key={s}>{s}</option>)}</select></div>
+                <div><label style={L}>Nome do Contato</label><input style={I} value={form.contato_nome} onChange={e => set("contato_nome", e.target.value)} placeholder="Nome da pessoa" /></div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div><label style={L}>Email</label><input style={I} value={form.contato_email} onChange={e => set("contato_email", e.target.value)} placeholder="email@exemplo.com" /></div>
+                <div><label style={L}>WhatsApp</label><input style={I} value={form.contato_whatsapp} onChange={e => set("contato_whatsapp", e.target.value)} placeholder="55 11 99999-9999" /></div>
+              </div>
+              <div><label style={L}>Instagram</label><input style={I} value={form.contato_instagram} onChange={e => set("contato_instagram", e.target.value)} placeholder="@perfil" /></div>
+              <div><label style={L}>Observações gerais</label><textarea style={{ ...I, resize: "vertical", minHeight: 80 }} value={form.obs} onChange={e => set("obs", e.target.value)} placeholder="Contexto, como conheceu, notas importantes..." /></div>
+            </div>
+          )}
+
+          {/* FINANCEIRO TAB */}
+          {activeTab === "financeiro" && (
+            <div style={{ display: "grid", gap: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div><label style={L}>Modelo financeiro</label><select style={I} value={form.modelo_financeiro} onChange={e => set("modelo_financeiro", e.target.value)}><option value="">— Selecionar —</option>{PARCERIA_MODELO.map(m => <option key={m}>{m}</option>)}</select></div>
+                <div><label style={L}>Valor / Percentual acordado</label><input style={I} value={form.valor} onChange={e => set("valor", e.target.value)} placeholder="Ex: 10% / R$ 500/mês" /></div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div><label style={L}>Data de início</label><input type="date" style={I} value={form.data_inicio} onChange={e => set("data_inicio", e.target.value)} /></div>
+                <div><label style={L}>Vencimento do contrato</label><input type="date" style={I} value={form.data_vencimento} onChange={e => set("data_vencimento", e.target.value)} /></div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <input type="checkbox" id="renovacao" checked={form.renovacao_automatica} onChange={e => set("renovacao_automatica", e.target.checked)} style={{ width: 16, height: 16, accentColor: "#3B82F6", cursor: "pointer" }} />
+                <label htmlFor="renovacao" style={{ fontSize: 13, color: "#475569", cursor: "pointer" }}>Renovação automática</label>
+              </div>
+              {diasVenc !== null && (
+                <div style={{ background: diasVenc <= 0 ? "#FEF2F2" : diasVenc <= 7 ? "#FEF2F2" : diasVenc <= 30 ? "#FFFBEB" : "#ECFDF5", border: `1.5px solid ${diasVenc <= 7 ? "#FECACA" : diasVenc <= 30 ? "#FDE68A" : "#A7F3D0"}`, borderRadius: 10, padding: "12px 16px", fontSize: 13, color: diasVenc <= 7 ? "#7F1D1D" : diasVenc <= 30 ? "#78350F" : "#065F46", fontWeight: 600 }}>
+                  {diasVenc <= 0 ? "⚠️ Contrato vencido! Ação necessária." : diasVenc <= 7 ? `⚠️ Vence em ${diasVenc} dia${diasVenc > 1 ? "s" : ""}! Renovar ou encerrar.` : diasVenc <= 30 ? `⏰ Vence em ${diasVenc} dias.` : `✅ Contrato válido por mais ${diasVenc} dias.`}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* RESULTADOS TAB */}
+          {activeTab === "resultados" && (
+            <div style={{ display: "grid", gap: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={L}>Leads gerados</label>
+                  <input type="number" style={I} value={form.leads_gerados} onChange={e => set("leads_gerados", parseInt(e.target.value) || 0)} />
+                  <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4 }}>Total de leads vindos desta parceria</div>
+                </div>
+                <div>
+                  <label style={L}>Vendas / Conversões</label>
+                  <input type="number" style={I} value={form.vendas_geradas} onChange={e => set("vendas_geradas", parseInt(e.target.value) || 0)} />
+                  <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4 }}>Total de clientes convertidos</div>
+                </div>
+              </div>
+              {(form.leads_gerados > 0 || form.vendas_geradas > 0) && (
+                <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "14px 16px", border: "1.5px solid #E2E8F0" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 10 }}>Resumo de performance</div>
+                  <div style={{ display: "flex", gap: 20 }}>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 28, fontWeight: 800, color: "#3B82F6" }}>{form.leads_gerados}</div>
+                      <div style={{ fontSize: 11, color: "#94A3B8" }}>Leads</div>
+                    </div>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 28, fontWeight: 800, color: "#10B981" }}>{form.vendas_geradas}</div>
+                      <div style={{ fontSize: 11, color: "#94A3B8" }}>Conversões</div>
+                    </div>
+                    {form.leads_gerados > 0 && (
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontSize: 28, fontWeight: 800, color: "#6366F1" }}>{Math.round((form.vendas_geradas / form.leads_gerados) * 100)}%</div>
+                        <div style={{ fontSize: 11, color: "#94A3B8" }}>Taxa conversão</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* HISTÓRICO TAB */}
+          {activeTab === "historico" && (
+            <div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 0, marginBottom: 20 }}>
+                {(form.historico || []).length === 0 && (
+                  <div style={{ textAlign: "center", padding: "30px 0", color: "#94A3B8", fontSize: 13 }}>Nenhum registro ainda. Documente conversas, follow-ups e atualizações!</div>
+                )}
+                {[...(form.historico || [])].reverse().map((c, i) => (
+                  <div key={c.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", paddingBottom: i < (form.historico||[]).length - 1 ? 16 : 0 }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#10B981", marginTop: 5, flexShrink: 0 }} />
+                      {i < (form.historico||[]).length - 1 && <div style={{ width: 1, flex: 1, background: "#E2E8F0", margin: "4px 0", minHeight: 24 }} />}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, color: "#1E293B", lineHeight: 1.5 }}>{c.text}</div>
+                      <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>{c.ts}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: 14 }}>
+                <label style={L}>Registrar atualização</label>
+                <textarea value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Ex: Enviado contrato por email · Reunião marcada para quinta · Parceiro confirmou interesse..." style={{ ...({ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 13, color: "#1E293B", background: "#F8FAFC", outline: "none", fontFamily: "inherit", boxSizing: "border-box" }), resize: "vertical", minHeight: 80 }} />
+                <button onClick={addHistorico} disabled={!newComment.trim()} style={{ marginTop: 8, padding: "8px 18px", borderRadius: 8, border: "none", background: newComment.trim() ? "linear-gradient(135deg,#1E3A8A,#3B82F6)" : "#CBD5E1", color: "#fff", cursor: newComment.trim() ? "pointer" : "not-allowed", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>Registrar</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: "14px 24px", borderTop: "1px solid #E2E8F0", display: "flex", gap: 10, justifyContent: "flex-end", background: "#F8FAFC" }}>
+          <button onClick={onClose} style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", cursor: "pointer", fontWeight: 600, fontSize: 13, fontFamily: "inherit" }}>Cancelar</button>
+          <button onClick={() => form.nome.trim() && onSave(form)} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>Salvar Parceria</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ParceriasPage() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null);
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterTipo, setFilterTipo] = useState("");
+  const [view, setView] = useState("pipeline");
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("parcerias").select("*").order("created_at", { ascending: false });
+    if (data) setItems(data.map(p => ({ ...p, historico: p.historico || [] })));
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (form) => {
+    const payload = { nome: form.nome, tipo: form.tipo, contato_nome: form.contato_nome, contato_email: form.contato_email, contato_whatsapp: form.contato_whatsapp, contato_instagram: form.contato_instagram, status: form.status, modelo_financeiro: form.modelo_financeiro, valor: form.valor, data_inicio: form.data_inicio, data_vencimento: form.data_vencimento, renovacao_automatica: form.renovacao_automatica, leads_gerados: form.leads_gerados || 0, vendas_geradas: form.vendas_geradas || 0, obs: form.obs, historico: form.historico || [], updated_at: new Date().toISOString() };
+    if (form.id) await supabase.from("parcerias").update(payload).eq("id", form.id);
+    else await supabase.from("parcerias").insert(payload);
+    setModal(null);
+    load();
+  };
+
+  const del = async (id) => {
+    if (window.confirm("Excluir esta parceria?")) { await supabase.from("parcerias").delete().eq("id", id); load(); }
+  };
+
+  const filtered = items.filter(i => (!filterStatus || i.status === filterStatus) && (!filterTipo || i.tipo === filterTipo));
+  const ativos = items.filter(i => i.status === "Ativo").length;
+  const totalLeads = items.reduce((s, i) => s + (i.leads_gerados || 0), 0);
+  const totalVendas = items.reduce((s, i) => s + (i.vendas_geradas || 0), 0);
+  const vencendoBreve = items.filter(i => { if (!i.data_vencimento) return false; const d = Math.ceil((new Date(i.data_vencimento) - new Date()) / 86400000); return d >= 0 && d <= 30; });
+
+  if (loading) return <div style={{ textAlign: "center", padding: 60, color: "#94A3B8" }}>⏳ Carregando parcerias...</div>;
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#1E293B" }}>🤝 Controle de Parcerias</h2>
+          <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748B" }}>{ativos} ativas · {items.length} no total</p>
+        </div>
+        <button onClick={() => setModal(emptyParceria())} style={{ padding: "9px 18px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>+ Nova Parceria</button>
+      </div>
+
+      {/* Alerta vencimentos */}
+      {vencendoBreve.length > 0 && (
+        <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 18 }}>⏰</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#78350F" }}>{vencendoBreve.length} contrato{vencendoBreve.length > 1 ? "s" : ""} vence{vencendoBreve.length > 1 ? "m" : ""} nos próximos 30 dias!</div>
+            <div style={{ fontSize: 11, color: "#92400E" }}>{vencendoBreve.map(p => p.nome).join(" · ")}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 10, marginBottom: 20 }}>
+        {[
+          ["🤝", "Total", items.length, "#475569", "#F8FAFC"],
+          ["✅", "Ativos", ativos, "#059669", "#ECFDF5"],
+          ["🔄", "Em negociação", items.filter(i => ["Contato feito","Proposta enviada","Contrato enviado"].includes(i.status)).length, "#2563EB", "#EFF6FF"],
+          ["🎯", "Leads gerados", totalLeads, "#6366F1", "#EEF2FF"],
+          ["💰", "Conversões", totalVendas, "#D97706", "#FFFBEB"],
+        ].map(([icon, label, value, color, bg]) => (
+          <div key={label} style={{ background: bg, borderRadius: 12, padding: "12px 14px", border: `1px solid ${bg}` }}>
+            <div style={{ fontSize: 18 }}>{icon}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color, marginTop: 4 }}>{value}</div>
+            <div style={{ fontSize: 11, color, fontWeight: 600, opacity: 0.8 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #E2E8F0", padding: "10px 14px", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 18 }}>
+        <div style={{ display: "flex", gap: 3, background: "#F1F5F9", borderRadius: 7, padding: 3 }}>
+          {[["pipeline", "🔄 Pipeline"], ["lista", "☰ Lista"]].map(([v, l]) => (
+            <button key={v} onClick={() => setView(v)} style={{ padding: "4px 12px", borderRadius: 5, border: "none", background: view === v ? "#fff" : "transparent", color: view === v ? "#1E3A8A" : "#64748B", fontWeight: view === v ? 700 : 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+          ))}
+        </div>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ padding: "5px 8px", borderRadius: 7, border: `1.5px solid ${filterStatus ? "#3B82F6" : "#E2E8F0"}`, fontSize: 12, color: filterStatus ? "#1E3A8A" : "#64748B", background: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
+          <option value="">Todos — Status</option>
+          {PARCERIA_STATUS.map(s => <option key={s}>{s}</option>)}
+        </select>
+        <select value={filterTipo} onChange={e => setFilterTipo(e.target.value)} style={{ padding: "5px 8px", borderRadius: 7, border: `1.5px solid ${filterTipo ? "#3B82F6" : "#E2E8F0"}`, fontSize: 12, color: filterTipo ? "#1E3A8A" : "#64748B", background: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
+          <option value="">Todos — Tipo</option>
+          {PARCERIA_TIPOS.map(t => <option key={t}>{t}</option>)}
+        </select>
+        {(filterStatus || filterTipo) && <button onClick={() => { setFilterStatus(""); setFilterTipo(""); }} style={{ fontSize: 11, color: "#EF4444", background: "#FEE2E2", border: "none", padding: "4px 10px", borderRadius: 999, cursor: "pointer", fontWeight: 600, fontFamily: "inherit" }}>✕ Limpar</button>}
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "#94A3B8" }}>{filtered.length} parceiro{filtered.length !== 1 ? "s" : ""}</span>
+      </div>
+
+      {/* PIPELINE VIEW */}
+      {view === "pipeline" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 14 }}>
+          {PIPELINE_STEPS.map(step => {
+            const col = filtered.filter(p => p.status === step);
+            const ss = PARCERIA_STATUS_STYLE[step];
+            return (
+              <div key={step}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: ss.dot, display: "inline-block" }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", flex: 1 }}>{step}</span>
+                  <span style={{ fontSize: 10, background: ss.bg, color: ss.color, borderRadius: 999, padding: "1px 7px", fontWeight: 700 }}>{col.length}</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 60 }}>
+                  {col.map(p => {
+                    const diasV = p.data_vencimento ? Math.ceil((new Date(p.data_vencimento) - new Date()) / 86400000) : null;
+                    return (
+                      <div key={p.id} onClick={() => setModal(p)} style={{ background: "#fff", borderRadius: 10, padding: "12px 14px", boxShadow: "0 1px 4px rgba(15,23,42,0.07)", border: `1.5px solid ${ss.bg}`, cursor: "pointer", transition: "all 0.15s", borderLeft: `3px solid ${ss.dot}` }}
+                        onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 14px rgba(15,23,42,0.10)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 1px 4px rgba(15,23,42,0.07)"; }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#1E293B", marginBottom: 4 }}>{p.nome}</div>
+                        {p.tipo && <div style={{ fontSize: 10, color: "#64748B", marginBottom: 6 }}>{p.tipo}</div>}
+                        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          {p.contato_nome && <div style={{ fontSize: 11, color: "#94A3B8" }}>👤 {p.contato_nome}</div>}
+                          {p.valor && <div style={{ fontSize: 11, color: "#059669", fontWeight: 600 }}>💰 {p.valor}</div>}
+                          {diasV !== null && diasV <= 30 && <div style={{ fontSize: 10, color: diasV <= 7 ? "#DC2626" : "#D97706", fontWeight: 700 }}>{diasV <= 0 ? "⚠️ Vencido" : `⏰ ${diasV}d`}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {col.length === 0 && <div style={{ border: "1.5px dashed #E2E8F0", borderRadius: 10, padding: 14, textAlign: "center", color: "#CBD5E1", fontSize: 11 }}>Vazio</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* LISTA VIEW */}
+      {view === "lista" && (
+        <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #E2E8F0", overflow: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: "#F8FAFC", borderBottom: "1.5px solid #E2E8F0" }}>
+                {["Parceiro", "Tipo", "Status", "Contato", "Modelo", "Leads", "Vencimento", ""].map(h => (
+                  <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#64748B", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((p, i) => {
+                const ss = PARCERIA_STATUS_STYLE[p.status] || PARCERIA_STATUS_STYLE["Prospecção"];
+                const diasV = p.data_vencimento ? Math.ceil((new Date(p.data_vencimento) - new Date()) / 86400000) : null;
+                return (
+                  <tr key={p.id} style={{ borderBottom: "1px solid #F1F5F9", background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
+                    <td style={{ padding: "10px 12px", fontWeight: 600, color: "#1E293B" }}>{p.nome}</td>
+                    <td style={{ padding: "10px 12px", fontSize: 12, color: "#64748B" }}>{p.tipo || "—"}</td>
+                    <td style={{ padding: "10px 12px" }}><span style={{ fontSize: 11, background: ss.bg, color: ss.color, padding: "2px 8px", borderRadius: 999, fontWeight: 600, whiteSpace: "nowrap" }}><span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: ss.dot, marginRight: 4 }} />{p.status}</span></td>
+                    <td style={{ padding: "10px 12px", fontSize: 12, color: "#475569" }}>{p.contato_nome || "—"}</td>
+                    <td style={{ padding: "10px 12px", fontSize: 12, color: "#475569" }}>{p.modelo_financeiro || "—"}</td>
+                    <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 700, color: "#6366F1" }}>{p.leads_gerados || 0}</td>
+                    <td style={{ padding: "10px 12px", fontSize: 12, color: diasV !== null && diasV <= 30 ? (diasV <= 7 ? "#DC2626" : "#D97706") : "#64748B", fontWeight: diasV !== null && diasV <= 30 ? 700 : 400 }}>
+                      {p.data_vencimento ? (diasV !== null && diasV <= 0 ? "⚠️ Vencido" : diasV !== null && diasV <= 30 ? `⏰ ${diasV}d` : new Date(p.data_vencimento + "T12:00").toLocaleDateString("pt-BR")) : "—"}
+                    </td>
+                    <td style={{ padding: "10px 8px" }}>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button onClick={() => setModal(p)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>✏️</button>
+                        <button onClick={() => del(p.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>🗑</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filtered.length === 0 && <tr><td colSpan={8} style={{ padding: 32, textAlign: "center", color: "#94A3B8", fontSize: 13 }}>Nenhuma parceria encontrada</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Encerrados */}
+      {items.filter(i => i.status === "Encerrado" || i.status === "Pausado").length > 0 && (
+        <div style={{ marginTop: 20, opacity: 0.6 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Pausados / Encerrados</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {items.filter(i => i.status === "Encerrado" || i.status === "Pausado").map(p => (
+              <div key={p.id} onClick={() => setModal(p)} style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12, color: "#64748B" }}>{p.nome} <span style={{ fontSize: 10 }}>({p.status})</span></div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {modal && <ParceriaModal item={modal} onSave={save} onClose={() => setModal(null)} />}
+    </div>
+  );
+}
+
 // ── HOME PAGE ─────────────────────────────────────────────────────────────────
 const VERSICULOS = [
   { text: "Tudo posso naquele que me fortalece.", ref: "Filipenses 4,13" },
@@ -1710,7 +2102,7 @@ export default function App() {
 
   const stats = useMemo(() => STATUSES.map(s => ({ label: s, count: tasks.filter(t => t.status === s).length, ...STATUS_STYLE[s] })), [tasks]);
   const fmtDate = d => d ? new Date(d + "T12:00").toLocaleDateString("pt-BR") : "—";
-  const TABS = [["home", "🏠 Início"], ["demandas", "📋 Demandas"], ["agenda", "🗓 Agenda"], ["fixas", "📌 Rotinas"], ["calendario", "📅 Calendário"], ["instagram", "📸 Instagram"], ["relatorios", "📊 Relatórios"]];
+  const TABS = [["home", "🏠 Início"], ["demandas", "📋 Demandas"], ["agenda", "🗓 Agenda"], ["fixas", "📌 Rotinas"], ["parcerias", "🤝 Parcerias"], ["calendario", "📅 Calendário"], ["instagram", "📸 Instagram"], ["relatorios", "📊 Relatórios"]];
 
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#1E293B" }}>
@@ -1782,6 +2174,7 @@ export default function App() {
         {tab === "home" && <HomePage tasks={tasks} setTab={setTab} />}
         {tab === "agenda" && <AgendaPage tasks={tasks} />}
         {tab === "fixas" && <FixasPage />}
+        {tab === "parcerias" && <ParceriasPage />}
         {tab === "calendario" && <CalendarioPage />}
         {tab === "instagram" && <InstaPanel onCreateTask={task => { saveTask({ ...task, id: null }); setTab("demandas"); }} />}
         {tab === "relatorios" && <ReportsPage />}
