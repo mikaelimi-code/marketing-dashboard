@@ -1417,7 +1417,23 @@ function ParceriaModal({ item, onSave, onClose }) {
   const [form, setForm] = useState({ ...item, historico: item.historico || [] });
   const [activeTab, setActiveTab] = useState("info");
   const [newComment, setNewComment] = useState("");
+  const [uploading, setUploading] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const uploadContrato = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const fileName = `contrato_${Date.now()}.${ext}`;
+      const { data, error } = await supabase.storage.from("contratos").upload(fileName, file, { upsert: true });
+      if (error) throw error;
+      const { data: urlData } = supabase.storage.from("contratos").getPublicUrl(fileName);
+      set("contrato_url", urlData.publicUrl);
+      set("contrato_nome", file.name);
+    } catch (e) { alert("Erro ao enviar arquivo: " + e.message); }
+    setUploading(false);
+  };
 
   const addHistorico = () => {
     if (!newComment.trim()) return;
@@ -1509,6 +1525,33 @@ function ParceriaModal({ item, onSave, onClose }) {
                   {diasVenc <= 0 ? "⚠️ Contrato vencido! Ação necessária." : diasVenc <= 7 ? `⚠️ Vence em ${diasVenc} dia${diasVenc > 1 ? "s" : ""}! Renovar ou encerrar.` : diasVenc <= 30 ? `⏰ Vence em ${diasVenc} dias.` : `✅ Contrato válido por mais ${diasVenc} dias.`}
                 </div>
               )}
+
+              {/* Anexo de contrato */}
+              <div style={{ borderTop: "1.5px solid #E2E8F0", paddingTop: 14 }}>
+                <label style={L}>📎 Anexar contrato (PDF, DOC)</label>
+                {form.contrato_url ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#ECFDF5", border: "1.5px solid #A7F3D0", borderRadius: 8, padding: "10px 14px" }}>
+                    <span style={{ fontSize: 18 }}>📄</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#065F46" }}>{form.contrato_nome || "Contrato anexado"}</div>
+                      <a href={form.contrato_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#059669" }}>Ver documento →</a>
+                    </div>
+                    <button onClick={() => { set("contrato_url", ""); set("contrato_nome", ""); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#DC2626", fontSize: 12, fontFamily: "inherit" }}>✕ Remover</button>
+                  </div>
+                ) : (
+                  <div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", background: "#F8FAFC", border: "1.5px dashed #CBD5E1", borderRadius: 8, cursor: uploading ? "not-allowed" : "pointer" }}>
+                      <span style={{ fontSize: 20 }}>📎</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#475569" }}>{uploading ? "⏳ Enviando..." : "Clique para anexar o contrato"}</div>
+                        <div style={{ fontSize: 11, color: "#94A3B8" }}>PDF, DOC, DOCX — até 10MB</div>
+                      </div>
+                      <input type="file" accept=".pdf,.doc,.docx" style={{ display: "none" }} onChange={e => e.target.files[0] && uploadContrato(e.target.files[0])} disabled={uploading} />
+                    </label>
+                    <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 6 }}>⚠️ Para usar esta função, é necessário criar o bucket "contratos" no Supabase Storage.</div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1580,9 +1623,14 @@ function ParceriaModal({ item, onSave, onClose }) {
           )}
         </div>
 
-        <div style={{ padding: "14px 24px", borderTop: "1px solid #E2E8F0", display: "flex", gap: 10, justifyContent: "flex-end", background: "#F8FAFC" }}>
-          <button onClick={onClose} style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", cursor: "pointer", fontWeight: 600, fontSize: 13, fontFamily: "inherit" }}>Cancelar</button>
-          <button onClick={() => form.nome.trim() && onSave(form)} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>Salvar Parceria</button>
+        <div style={{ padding: "14px 24px", borderTop: "1px solid #E2E8F0", display: "flex", gap: 10, justifyContent: "space-between", alignItems: "center", background: "#F8FAFC" }}>
+          <div>
+            {form.id && <button onClick={() => { if (window.confirm("Excluir esta parceria permanentemente?")) { onSave({ ...form, _delete: true }); } }} style={{ padding: "9px 14px", borderRadius: 8, border: "1.5px solid #FECACA", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", fontWeight: 600, fontSize: 13, fontFamily: "inherit" }}>🗑 Excluir parceria</button>}
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={onClose} style={{ padding: "9px 18px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", cursor: "pointer", fontWeight: 600, fontSize: 13, fontFamily: "inherit" }}>Cancelar</button>
+            <button onClick={() => form.nome.trim() && onSave(form)} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>Salvar Parceria</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1606,7 +1654,8 @@ function ParceriasPage() {
   useEffect(() => { load(); }, [load]);
 
   const save = async (form) => {
-    const payload = { nome: form.nome, tipo: form.tipo, contato_nome: form.contato_nome, contato_email: form.contato_email, contato_whatsapp: form.contato_whatsapp, contato_instagram: form.contato_instagram, status: form.status, modelo_financeiro: form.modelo_financeiro, valor: form.valor, data_inicio: form.data_inicio, data_vencimento: form.data_vencimento, renovacao_automatica: form.renovacao_automatica, leads_gerados: form.leads_gerados || 0, vendas_geradas: form.vendas_geradas || 0, obs: form.obs, historico: form.historico || [], updated_at: new Date().toISOString() };
+    if (form._delete) { await supabase.from("parcerias").delete().eq("id", form.id); setModal(null); load(); return; }
+    const payload = { nome: form.nome, tipo: form.tipo, contato_nome: form.contato_nome, contato_email: form.contato_email, contato_whatsapp: form.contato_whatsapp, contato_instagram: form.contato_instagram, status: form.status, modelo_financeiro: form.modelo_financeiro, valor: form.valor, data_inicio: form.data_inicio, data_vencimento: form.data_vencimento, renovacao_automatica: form.renovacao_automatica, leads_gerados: form.leads_gerados || 0, vendas_geradas: form.vendas_geradas || 0, obs: form.obs, historico: form.historico || [], contrato_url: form.contrato_url || "", contrato_nome: form.contrato_nome || "", updated_at: new Date().toISOString() };
     if (form.id) await supabase.from("parcerias").update(payload).eq("id", form.id);
     else await supabase.from("parcerias").insert(payload);
     setModal(null);
@@ -2077,7 +2126,7 @@ export default function App() {
   useEffect(() => { loadTasks(); }, [loadTasks]);
 
   const saveTask = async (form) => {
-    const payload = { title: form.title, person: form.person, priority: form.priority, date: form.date || "", channel: form.channel, status: form.status, sector: form.sector, obs: form.obs || "" };
+    const payload = { title: form.title, person: form.person, priority: form.priority, date: form.date || "", channel: form.channel, status: form.status, sector: form.sector, obs: form.obs || "", task_comments: form.task_comments || [], checklist: form.checklist || [] };
     if (form.id) {
       await supabase.from("tasks").update(payload).eq("id", form.id);
     } else {
