@@ -1492,9 +1492,9 @@ function PlannerPage({ tasks }) {
   useEffect(() => { loadPlanner(); }, [loadPlanner]);
 
   const salvarPlanner = async (itens) => {
-    await supabase.from("planner_dia").upsert({ data: today, pessoa, itens, updated_at: new Date().toISOString() }, { onConflict: "data,pessoa" });
-    const { data } = await supabase.from("planner_dia").select("*").eq("data", today).eq("pessoa", pessoa).maybeSingle();
-    if (data) setPlanner(data);
+    await supabase.from("planner_dia").delete().eq("data", today).eq("pessoa", pessoa);
+    const { data: inserted } = await supabase.from("planner_dia").insert({ data: today, pessoa, itens, updated_at: new Date().toISOString() }).select().single();
+    setPlanner(inserted || { data: today, pessoa, itens, id: Date.now() });
     setConfirmando(false);
   };
 
