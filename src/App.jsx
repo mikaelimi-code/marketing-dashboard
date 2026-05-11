@@ -1388,6 +1388,351 @@ function FixasPage() {
 
 
 
+
+// ── PLANNER DO DIA ────────────────────────────────────────────────────────────
+const BLOCOS_CONFIG = {
+  Gabi:    [{ id: "manha", label: "☀️ Manhã", inicio: "07:30", fim: "13:00" }, { id: "tarde", label: "🌤 Tarde", inicio: "14:00", fim: "17:00" }],
+  Julia:   [{ id: "manha", label: "☀️ Manhã", inicio: "07:30", fim: "11:00" }, { id: "tarde", label: "🌤 Tarde", inicio: "11:00", fim: "17:00" }],
+  Mikaeli: [{ id: "manha", label: "☀️ Manhã", inicio: "08:00", fim: "12:00" }, { id: "tarde", label: "🌤 Tarde", inicio: "13:00", fim: "17:00" }],
+};
+
+const TEMPO_SUGERIDO = { Urgente: 60, Alta: 30, Normal: 20, Baixa: 15 };
+const TIPO_TEMPO = { post: 30, demanda: 25, manual: 20 };
+
+function tempoLabel(min) {
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return m > 0 ? `${h}h${m}min` : `${h}h`;
+}
+
+function gerarSugestoes(tasks, calendarioItems, pessoa) {
+  const today = new Date().toISOString().split("T")[0];
+  const sugestoes = [];
+
+  // Demandas urgentes/alta atribuídas à pessoa
+  tasks.filter(t => t.person === pessoa && t.status !== "Concluído" && (t.priority === "Urgente" || t.priority === "Alta" || t.date === today))
+    .sort((a, b) => {
+      const ordem = { Urgente: 0, Alta: 1, Normal: 2, Baixa: 3 };
+      return (ordem[a.priority] || 2) - (ordem[b.priority] || 2);
+    })
+    .slice(0, 8)
+    .forEach(t => {
+      sugestoes.push({
+        id: `task_${t.id}`,
+        titulo: t.title,
+        tipo: "demanda",
+        prioridade: t.priority,
+        bloco: t.priority === "Urgente" ? "manha" : "tarde",
+        feito: false,
+        tempo: TEMPO_SUGERIDO[t.priority] || 20,
+        source_id: t.id,
+        canal: t.channel,
+        sector: t.sector,
+      });
+    });
+
+  // Posts do calendário de hoje
+  calendarioItems.filter(c => c.data_publicacao === today && (!c.responsavel || c.responsavel.includes(pessoa)))
+    .forEach(c => {
+      sugestoes.push({
+        id: `post_${c.id}`,
+        titulo: `📅 Publicar: ${c.title}`,
+        tipo: "post",
+        prioridade: "Alta",
+        bloco: "manha",
+        feito: false,
+        tempo: 30,
+        source_id: c.id,
+        canal: c.plataforma,
+      });
+    });
+
+  return sugestoes;
+}
+
+function PlannerPage({ tasks }) {
+  const [pessoa, setPessoa] = useState("Gabi");
+  const [planner, setPlanner] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [sugestoes, setSugestoes] = useState([]);
+  const [confirmando, setConfirmando] = useState(false);
+  const [selecionadas, setSelecionadas] = useState({});
+  const [novasTarefas, setNovasTarefas] = useState({});
+  const [textoNovo, setTextoNovo] = useState({ manha: "", tarde: "" });
+  const [calendario, setCalendario] = useState([]);
+
+  const today = new Date().toISOString().split("T")[0];
+  const blocos = BLOCOS_CONFIG[pessoa] || BLOCOS_CONFIG.Gabi;
+
+  const loadCalendario = useCallback(async () => {
+    const { data } = await supabase.from("calendario").select("*").eq("data_publicacao", today);
+    if (data) setCalendario(data);
+  }, [today]);
+
+  const loadPlanner = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from("planner_dia").select("*").eq("data", today).eq("pessoa", pessoa).maybeSingle();
+    if (data?.itens?.length > 0) {
+      setPlanner(data);
+      setConfirmando(false);
+    } else {
+      // Gerar sugestões
+      const sugs = gerarSugestoes(tasks, calendario, pessoa);
+      setSugestoes(sugs);
+      const sel = {};
+      sugs.forEach(s => { sel[s.id] = true; });
+      setSelecionadas(sel);
+      setConfirmando(true);
+      setPlanner(null);
+    }
+    setLoading(false);
+  }, [pessoa, tasks, calendario, today]);
+
+  useEffect(() => { loadCalendario(); }, [loadCalendario]);
+  useEffect(() => { loadPlanner(); }, [loadPlanner]);
+
+  const salvarPlanner = async (itens) => {
+    await supabase.from("planner_dia").upsert({ data: today, pessoa, itens, updated_at: new Date().toISOString() }, { onConflict: "data,pessoa" });
+    const { data } = await supabase.from("planner_dia").select("*").eq("data", today).eq("pessoa", pessoa).maybeSingle();
+    if (data) setPlanner(data);
+    setConfirmando(false);
+  };
+
+  const confirmarPlanner = async () => {
+    const itens = sugestoes.filter(s => selecionadas[s.id]);
+    // Add manual tasks
+    Object.entries(novasTarefas).forEach(([bloco, lista]) => {
+      lista.forEach(t => itens.push(t));
+    });
+    // Sort by bloco then prioridade
+    const ordem = { Urgente: 0, Alta: 1, Normal: 2, Baixa: 3 };
+    itens.sort((a, b) => {
+      if (a.bloco !== b.bloco) return a.bloco === "manha" ? -1 : 1;
+      return (ordem[a.prioridade] || 2) - (ordem[b.prioridade] || 2);
+    });
+    await salvarPlanner(itens);
+  };
+
+  const toggleFeito = async (itemId) => {
+    if (!planner) return;
+    const updated = planner.itens.map(i => i.id === itemId ? { ...i, feito: !i.feito } : i);
+    await supabase.from("planner_dia").update({ itens: updated, updated_at: new Date().toISOString() }).eq("id", planner.id);
+    setPlanner(p => ({ ...p, itens: updated }));
+  };
+
+  const moverBloco = async (itemId, novoBloco) => {
+    if (!planner) return;
+    const updated = planner.itens.map(i => i.id === itemId ? { ...i, bloco: novoBloco } : i);
+    await supabase.from("planner_dia").update({ itens: updated, updated_at: new Date().toISOString() }).eq("id", planner.id);
+    setPlanner(p => ({ ...p, itens: updated }));
+  };
+
+  const adicionarManual = async (bloco) => {
+    const texto = textoNovo[bloco]?.trim();
+    if (!texto) return;
+    const novoItem = { id: `manual_${Date.now()}`, titulo: texto, tipo: "manual", prioridade: "Normal", bloco, feito: false, tempo: 20 };
+    const updated = [...(planner?.itens || []), novoItem];
+    await supabase.from("planner_dia").upsert({ data: today, pessoa, itens: updated, updated_at: new Date().toISOString() }, { onConflict: "data,pessoa" });
+    setPlanner(p => p ? { ...p, itens: updated } : { itens: updated });
+    setTextoNovo(t => ({ ...t, [bloco]: "" }));
+  };
+
+  const deletarItem = async (itemId) => {
+    const updated = planner.itens.filter(i => i.id !== itemId);
+    await supabase.from("planner_dia").update({ itens: updated, updated_at: new Date().toISOString() }).eq("id", planner.id);
+    setPlanner(p => ({ ...p, itens: updated }));
+  };
+
+  const resetarDia = async () => {
+    if (!window.confirm("Resetar o planner de hoje e gerar novas sugestões?")) return;
+    await supabase.from("planner_dia").delete().eq("data", today).eq("pessoa", pessoa);
+    loadPlanner();
+  };
+
+  const PRIO_COLOR = { Urgente: { bg: "#FEE2E2", color: "#DC2626", dot: "#DC2626" }, Alta: { bg: "#FEF3C7", color: "#D97706", dot: "#F59E0B" }, Normal: { bg: "#DBEAFE", color: "#2563EB", dot: "#3B82F6" }, Baixa: { bg: "#F1F5F9", color: "#64748B", dot: "#94A3B8" } };
+  const TIPO_ICON = { demanda: "📋", post: "📅", manual: "✏️" };
+
+  const itensPorBloco = (blocoId) => (planner?.itens || []).filter(i => i.bloco === blocoId);
+  const totalMinutos = (blocoId) => itensPorBloco(blocoId).reduce((s, i) => s + (i.tempo || 0), 0);
+  const feitosHoje = (planner?.itens || []).filter(i => i.feito).length;
+  const totalHoje = (planner?.itens || []).length;
+  const pctDia = totalHoje > 0 ? Math.round((feitosHoje / totalHoje) * 100) : 0;
+
+  const dataFormatada = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#1E293B" }}>⚡ Planner do Dia</h2>
+          <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748B", textTransform: "capitalize" }}>{dataFormatada}</p>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {/* Person selector */}
+          <div style={{ display: "flex", gap: 4, background: "#F1F5F9", borderRadius: 10, padding: 4 }}>
+            {PEOPLE.map(p => (
+              <button key={p} onClick={() => setPessoa(p)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 7, border: "none", background: pessoa === p ? "#fff" : "transparent", boxShadow: pessoa === p ? "0 1px 4px rgba(0,0,0,0.1)" : "none", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+                <Avatar name={p} size={20} />
+                <span style={{ fontSize: 13, fontWeight: pessoa === p ? 700 : 500, color: pessoa === p ? PERSON_COLORS[p] : "#64748B" }}>{p}</span>
+              </button>
+            ))}
+          </div>
+          {planner && <button onClick={resetarDia} style={{ fontSize: 12, padding: "7px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", cursor: "pointer", fontFamily: "inherit" }}>🔄 Novo planner</button>}
+        </div>
+      </div>
+
+      {loading && <div style={{ textAlign: "center", padding: 60, color: "#94A3B8" }}>⏳ Carregando seu dia...</div>}
+
+      {/* TELA DE CONFIRMAÇÃO */}
+      {!loading && confirmando && (
+        <div>
+          <div style={{ background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderRadius: 14, padding: "16px 20px", marginBottom: 20, border: "1.5px solid #BFDBFE" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#1E3A8A", marginBottom: 4 }}>✨ Sugestões para o seu dia, {pessoa}!</div>
+            <div style={{ fontSize: 12, color: "#3B82F6" }}>O sistema selecionou as tarefas mais importantes. Confirme, ajuste ou adicione mais antes de montar seu planner.</div>
+          </div>
+
+          {sugestoes.length === 0 && (
+            <div style={{ textAlign: "center", padding: "30px 0", color: "#94A3B8", fontSize: 13 }}>
+              Nenhuma demanda atribuída a {pessoa} hoje. Adicione tarefas manualmente abaixo!
+            </div>
+          )}
+
+          {sugestoes.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Tarefas sugeridas — marque as que quer no planner</div>
+              {sugestoes.map(s => {
+                const pc = PRIO_COLOR[s.prioridade] || PRIO_COLOR.Normal;
+                const sec = SECTORS.find(x => x.id === s.sector);
+                return (
+                  <div key={s.id} onClick={() => setSelecionadas(sel => ({ ...sel, [s.id]: !sel[s.id] }))}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: selecionadas[s.id] ? "#F0FDF4" : "#F8FAFC", border: `1.5px solid ${selecionadas[s.id] ? "#A7F3D0" : "#E2E8F0"}`, borderRadius: 10, cursor: "pointer", transition: "all 0.15s" }}>
+                    <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${selecionadas[s.id] ? "#10B981" : "#CBD5E1"}`, background: selecionadas[s.id] ? "#10B981" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      {selecionadas[s.id] && <span style={{ color: "#fff", fontSize: 12 }}>✓</span>}
+                    </div>
+                    <span style={{ fontSize: 14 }}>{TIPO_ICON[s.tipo]}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: "#1E293B" }}>{s.titulo}</div>
+                      <div style={{ display: "flex", gap: 6, marginTop: 3 }}>
+                        <span style={{ fontSize: 10, background: pc.bg, color: pc.color, padding: "1px 6px", borderRadius: 999, fontWeight: 600 }}>{s.prioridade}</span>
+                        {sec && <span style={{ fontSize: 10, background: sec.bg, color: sec.color, padding: "1px 6px", borderRadius: 999, fontWeight: 600 }}>{sec.icon} {sec.label}</span>}
+                        <span style={{ fontSize: 10, color: "#94A3B8" }}>⏱ {tempoLabel(s.tempo)}</span>
+                      </div>
+                    </div>
+                    <select value={s.bloco} onChange={e => { e.stopPropagation(); setSugestoes(sg => sg.map(x => x.id === s.id ? { ...x, bloco: e.target.value } : x)); }} onClick={e => e.stopPropagation()}
+                      style={{ fontSize: 11, padding: "3px 6px", borderRadius: 6, border: "1.5px solid #E2E8F0", background: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
+                      {blocos.map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Adicionar tarefas manuais */}
+          {blocos.map(b => (
+            <div key={b.id} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#64748B", marginBottom: 6 }}>+ Adicionar tarefa manual em {b.label}</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input value={novasTarefas[b.id] || ""} onChange={e => setNovasTarefas(n => ({ ...n, [b.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && novasTarefas[b.id]?.trim()) { const nova = { id: `manual_${Date.now()}`, titulo: novasTarefas[b.id].trim(), tipo: "manual", prioridade: "Normal", bloco: b.id, feito: false, tempo: 20 }; setSugestoes(s => [...s, nova]); setSelecionadas(sel => ({ ...sel, [nova.id]: true })); setNovasTarefas(n => ({ ...n, [b.id]: "" })); } }} placeholder={`Tarefa para ${b.label.toLowerCase()}...`} style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+                <button onClick={() => { if (novasTarefas[b.id]?.trim()) { const nova = { id: `manual_${Date.now()}`, titulo: novasTarefas[b.id].trim(), tipo: "manual", prioridade: "Normal", bloco: b.id, feito: false, tempo: 20 }; setSugestoes(s => [...s, nova]); setSelecionadas(sel => ({ ...sel, [nova.id]: true })); setNovasTarefas(n => ({ ...n, [b.id]: "" })); } }} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#3B82F6", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>+ Add</button>
+              </div>
+            </div>
+          ))}
+
+          <button onClick={confirmarPlanner} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14, fontFamily: "inherit", marginTop: 8 }}>
+            ⚡ Montar meu planner do dia ({Object.values(selecionadas).filter(Boolean).length} tarefas)
+          </button>
+        </div>
+      )}
+
+      {/* PLANNER DO DIA */}
+      {!loading && !confirmando && planner && (
+        <div>
+          {/* Progresso do dia */}
+          <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #E2E8F0", padding: "14px 18px", marginBottom: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#1E293B" }}>Progresso do dia — {pessoa}</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: pctDia === 100 ? "#059669" : "#3B82F6" }}>{feitosHoje}/{totalHoje} concluídas</div>
+            </div>
+            <div style={{ height: 10, background: "#F1F5F9", borderRadius: 999 }}>
+              <div style={{ width: `${pctDia}%`, height: "100%", background: pctDia === 100 ? "linear-gradient(135deg,#10B981,#059669)" : "linear-gradient(135deg,#3B82F6,#6366F1)", borderRadius: 999, transition: "width 0.5s ease" }} />
+            </div>
+            {pctDia === 100 && <div style={{ textAlign: "center", fontSize: 13, fontWeight: 700, color: "#059669", marginTop: 8 }}>🎉 Dia concluído! Ótimo trabalho, {pessoa}!</div>}
+          </div>
+
+          {/* Blocos */}
+          {blocos.map(bloco => {
+            const itens = itensPorBloco(bloco.id);
+            const mins = totalMinutos(bloco.id);
+            const feitos = itens.filter(i => i.feito).length;
+            return (
+              <div key={bloco.id} style={{ marginBottom: 20 }}>
+                {/* Bloco header */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, padding: "10px 16px", background: "linear-gradient(135deg,#F8FAFC,#F1F5F9)", borderRadius: 10, border: "1.5px solid #E2E8F0" }}>
+                  <span style={{ fontSize: 18 }}>{bloco.label.split(" ")[0]}</span>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#1E293B" }}>{bloco.label.split(" ").slice(1).join(" ")}</span>
+                    <span style={{ fontSize: 12, color: "#64748B", marginLeft: 8 }}>{bloco.inicio} – {bloco.fim}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <span style={{ fontSize: 11, color: "#64748B" }}>⏱ {tempoLabel(mins)}</span>
+                    <span style={{ fontSize: 11, background: "#D1FAE5", color: "#065F46", padding: "2px 8px", borderRadius: 999, fontWeight: 600 }}>{feitos}/{itens.length}</span>
+                  </div>
+                </div>
+
+                {/* Itens do bloco */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {itens.length === 0 && (
+                    <div style={{ padding: "12px 16px", background: "#F8FAFC", borderRadius: 8, border: "1.5px dashed #E2E8F0", textAlign: "center", fontSize: 12, color: "#94A3B8" }}>Sem tarefas neste bloco</div>
+                  )}
+                  {itens.map((item, idx) => {
+                    const pc = PRIO_COLOR[item.prioridade] || PRIO_COLOR.Normal;
+                    const sec = item.sector ? SECTORS.find(x => x.id === item.sector) : null;
+                    return (
+                      <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: item.feito ? "#F0FDF4" : "#fff", border: `1.5px solid ${item.feito ? "#A7F3D0" : pc.bg}`, borderRadius: 10, borderLeft: `4px solid ${item.feito ? "#10B981" : pc.dot}`, transition: "all 0.2s", opacity: item.feito ? 0.75 : 1 }}>
+                        {/* Checkbox */}
+                        <div onClick={() => toggleFeito(item.id)} style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${item.feito ? "#10B981" : "#CBD5E1"}`, background: item.feito ? "#10B981" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, transition: "all 0.2s" }}>
+                          {item.feito && <span style={{ color: "#fff", fontSize: 13 }}>✓</span>}
+                        </div>
+
+                        <span style={{ fontSize: 14, flexShrink: 0 }}>{TIPO_ICON[item.tipo] || "📋"}</span>
+
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: item.feito ? "#64748B" : "#1E293B", textDecoration: item.feito ? "line-through" : "none", lineHeight: 1.4 }}>{item.titulo}</div>
+                          <div style={{ display: "flex", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 10, background: pc.bg, color: pc.color, padding: "1px 6px", borderRadius: 999, fontWeight: 600 }}>{item.prioridade}</span>
+                            {sec && <span style={{ fontSize: 10, background: sec.bg, color: sec.color, padding: "1px 6px", borderRadius: 999, fontWeight: 600 }}>{sec.icon} {sec.label}</span>}
+                            <span style={{ fontSize: 10, color: "#94A3B8" }}>⏱ {tempoLabel(item.tempo)}</span>
+                            {item.canal && <span style={{ fontSize: 10, color: "#94A3B8" }}>{CHANNEL_ICONS[item.canal]} {item.canal}</span>}
+                          </div>
+                        </div>
+
+                        {/* Mover bloco */}
+                        <select value={item.bloco} onChange={e => moverBloco(item.id, e.target.value)} style={{ fontSize: 10, padding: "3px 6px", borderRadius: 6, border: "1.5px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontFamily: "inherit", color: "#64748B" }}>
+                          {blocos.map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
+                        </select>
+
+                        <button onClick={() => deletarItem(item.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#CBD5E1", flexShrink: 0 }} onMouseEnter={e => e.currentTarget.style.color = "#EF4444"} onMouseLeave={e => e.currentTarget.style.color = "#CBD5E1"}>✕</button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Adicionar no bloco */}
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <input value={textoNovo[bloco.id] || ""} onChange={e => setTextoNovo(t => ({ ...t, [bloco.id]: e.target.value }))} onKeyDown={e => e.key === "Enter" && adicionarManual(bloco.id)} placeholder={`+ Adicionar tarefa em ${bloco.label.split(" ").slice(1).join(" ").toLowerCase()}...`} style={{ flex: 1, padding: "7px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 12, fontFamily: "inherit", outline: "none", background: "#F8FAFC", color: "#475569" }} />
+                  <button onClick={() => adicionarManual(bloco.id)} style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#3B82F6", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "inherit" }}>+</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── PARCERIAS ─────────────────────────────────────────────────────────────────
 const PARCERIA_TIPOS = ["Escola de idiomas", "Contador/Financeiro", "Advogado/Escritório", "Infoprodutor/Criador", "Câmbio/Remessas", "Agência de Imigração", "Outro"];
 const PARCERIA_STATUS = ["Prospecção", "Contato feito", "Proposta enviada", "Contrato enviado", "Ativo", "Pausado", "Encerrado"];
@@ -2151,7 +2496,7 @@ export default function App() {
 
   const stats = useMemo(() => STATUSES.map(s => ({ label: s, count: tasks.filter(t => t.status === s).length, ...STATUS_STYLE[s] })), [tasks]);
   const fmtDate = d => d ? new Date(d + "T12:00").toLocaleDateString("pt-BR") : "—";
-  const TABS = [["home", "🏠 Início"], ["demandas", "📋 Demandas"], ["agenda", "🗓 Agenda"], ["fixas", "📌 Rotinas"], ["parcerias", "🤝 Parcerias"], ["calendario", "📅 Calendário"], ["instagram", "📸 Instagram"], ["relatorios", "📊 Relatórios"]];
+  const TABS = [["home", "🏠 Início"], ["planner", "⚡ Planner"], ["demandas", "📋 Demandas"], ["agenda", "🗓 Agenda"], ["fixas", "📌 Rotinas"], ["parcerias", "🤝 Parcerias"], ["calendario", "📅 Calendário"], ["instagram", "📸 Instagram"], ["relatorios", "📊 Relatórios"]];
 
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#1E293B" }}>
@@ -2223,6 +2568,7 @@ export default function App() {
         {tab === "home" && <HomePage tasks={tasks} setTab={setTab} />}
         {tab === "agenda" && <AgendaPage tasks={tasks} />}
         {tab === "fixas" && <FixasPage />}
+        {tab === "planner" && <PlannerPage tasks={tasks} />}
         {tab === "parcerias" && <ParceriasPage />}
         {tab === "calendario" && <CalendarioPage />}
         {tab === "instagram" && <InstaPanel onCreateTask={task => { saveTask({ ...task, id: null }); setTab("demandas"); }} />}
