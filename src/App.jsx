@@ -1500,17 +1500,23 @@ function PlannerPage({ tasks }) {
 
   const confirmarPlanner = async () => {
     const itens = sugestoes.filter(s => selecionadas[s.id]);
-    // Add manual tasks
     Object.entries(novasTarefas).forEach(([bloco, lista]) => {
-      lista.forEach(t => itens.push(t));
+      if (Array.isArray(lista)) lista.forEach(t => itens.push(t));
     });
-    // Sort by bloco then prioridade
     const ordem = { Urgente: 0, Alta: 1, Normal: 2, Baixa: 3 };
     itens.sort((a, b) => {
       if (a.bloco !== b.bloco) return a.bloco === "manha" ? -1 : 1;
       return (ordem[a.prioridade] || 2) - (ordem[b.prioridade] || 2);
     });
-    await salvarPlanner(itens);
+    // Update state immediately so user sees planner right away
+    const fakePlanner = { data: today, pessoa, itens, id: Date.now() };
+    setPlanner(fakePlanner);
+    setConfirmando(false);
+    // Save to Supabase in background
+    try {
+      await supabase.from("planner_dia").delete().eq("data", today).eq("pessoa", pessoa);
+      await supabase.from("planner_dia").insert({ data: today, pessoa, itens, updated_at: new Date().toISOString() });
+    } catch(e) { console.error("Supabase save error:", e); }
   };
 
   const toggleFeito = async (itemId) => {
