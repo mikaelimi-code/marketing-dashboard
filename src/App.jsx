@@ -358,12 +358,10 @@ function InsightsPanel({ token, mode }) {
     if (!token || mode !== "real") return;
     setLoading(true);
     try {
-      const profileRes = await fetch(`https://graph.instagram.com/me?fields=username,followers_count,media_count,biography&access_token=${token}`);
-      const profile = await profileRes.json();
-      const mediaRes = await fetch(`https://graph.instagram.com/me/media?fields=id,caption,media_type,timestamp,like_count,comments_count&limit=5&access_token=${token}`);
-      const media = await mediaRes.json();
-      const insightsRes = await fetch(`https://graph.instagram.com/me/insights?metric=reach,impressions,profile_views,website_clicks&period=week&access_token=${token}`);
-      const insights = await insightsRes.json();
+      const [profileR, mediaR, insightsR] = await Promise.all([igFetch('profile'), igFetch('media'), igFetch('insights')]);
+      const profile = profileR.profile || {};
+      const media = { data: mediaR.media || [] };
+      const insights = { data: insightsR.insights || [] };
       const reach = insights.data?.find(m => m.name === "reach")?.values?.slice(-1)[0]?.value || 0;
       const impressions = insights.data?.find(m => m.name === "impressions")?.values?.slice(-1)[0]?.value || 0;
       const profile_views = insights.data?.find(m => m.name === "profile_views")?.values?.slice(-1)[0]?.value || 0;
@@ -373,7 +371,7 @@ function InsightsPanel({ token, mode }) {
     setLoading(false);
   };
 
-  useEffect(() => { if (mode === "real" && token) fetchInsights(); }, [mode, token]);
+  useEffect(() => { fetchInsights(); }, []);
 
   const followerGrowth = data.growth.length >= 2 ? data.growth[data.growth.length - 1].followers - data.growth[data.growth.length - 2].followers : 0;
   const maxFollowers = Math.max(...data.growth.map(g => g.followers));
@@ -480,7 +478,7 @@ function InsightsPanel({ token, mode }) {
 function InstaPanel({ onCreateTask }) {
   const [posts, setPosts] = useState(DEMO_POSTS);
   const [token, setToken] = useState("");
-  const [mode, setMode] = useState("demo");
+  const [mode, setMode] = useState("real");
   const [loading, setLoad] = useState(false);
   const [exp, setExp] = useState(null);
   const [instaTab, setInstaTab] = useState("insights");
@@ -788,6 +786,21 @@ function ReportsPage() {
 
 // ── CALENDARIO PAGE ───────────────────────────────────────────────────────────
 const NOTION_FN = 'https://axkqfqqaffqhbnvgyvhu.supabase.co/functions/v1/notion-sync';
+const IG_FN = 'https://axkqfqqaffqhbnvgyvhu.supabase.co/functions/v1/instagram-data';
+const IG_ANON_KEY = 'sb_publishable_KPSHnzry3YQXN4T3j64M6A_sLJF-Tip';
+
+async function igFetch(action, extra = {}) {
+  try {
+    const res = await fetch(IG_FN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${IG_ANON_KEY}` },
+      body: JSON.stringify({ action, ...extra }),
+    });
+    return await res.json();
+  } catch (e) {
+    return { error: e.message };
+  }
+}
 const NOTION_ANON = 'sb_publishable_KPSHnzry3YQXN4T3j64M6A_sLJF-Tip';
 
 const CANAL_OPTS = ["Instagram", "TikTok", "YouTube", "Facebook", "Close Friends", "Instagram - dark post"];
