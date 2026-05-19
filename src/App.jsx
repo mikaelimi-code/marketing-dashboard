@@ -476,90 +476,681 @@ function InsightsPanel({ token, mode }) {
 }
 
 function InstaPanel({ onCreateTask }) {
-  const [posts, setPosts] = useState(DEMO_POSTS);
-  const [token, setToken] = useState("");
-  const [mode, setMode] = useState("real");
-  const [loading, setLoad] = useState(false);
-  const [exp, setExp] = useState(null);
-  const [instaTab, setInstaTab] = useState("insights");
+  const [instaTab, setInstaTab] = useState("visao");
+  const [profile, setProfile] = useState(null);
+  const [media, setMedia] = useState([]);
+  const [insights, setInsights] = useState([]);
+  const [audience, setAudience] = useState(null);
+  const [online, setOnline] = useState([]);
+  const [stories, setStories] = useState([]);
+  const [topPosts, setTopPosts] = useState([]);
+  const [pendingComments, setPendingComments] = useState([]);
+  const [statusMap, setStatusMap] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+  const [expandedPost, setExpandedPost] = useState(null);
+  const [replyDraft, setReplyDraft] = useState({});
+  const [sending, setSending] = useState({});
+  const [commentFilter, setCommentFilter] = useState("pending");
 
-  const sorted = [...posts].sort((a, b) => b.comments.filter(c => !c.answered).length - a.comments.filter(c => !c.answered).length);
-  const fetchReal = async () => {
-    if (!token.trim()) return; setLoad(true);
+  const loadAll = useCallback(async () => {
+    setRefreshing(true); setError("");
     try {
-      const r = await fetch(`https://graph.instagram.com/me/media?fields=id,caption,media_type,timestamp&access_token=${token}`);
-      const d = await r.json();
-      if (d.error) throw new Error(d.error.message);
-      const en = await Promise.all(d.data.slice(0, 6).map(async p => {
-        const cr = await fetch(`https://graph.instagram.com/${p.id}/comments?fields=id,text,timestamp,username&access_token=${token}`);
-        const cd = await cr.json();
-        return { id: p.id, caption: p.caption || "", timestamp: p.timestamp?.split("T")[0], media_type: p.media_type, comments: (cd.data || []).map(c => ({ ...c, answered: false })) };
-      }));
-      setPosts(en); setMode("real");
-    } catch (e) { alert("Erro: " + e.message); }
-    setLoad(false);
+      const [p, m, t, i, a, o, s, c] = await Promise.all([
+        igFetch('profile'), igFetch('media', { limit: 25 }), igFetch('top_posts'),
+        igFetch('insights'), igFetch('audience'), igFetch('online_followers'),
+        igFetch('stories'), igFetch('pending_comments'),
+      ]);
+      if (p.success) setProfile(p.profile);
+      if (m.success) setMedia(m.media || []);
+      if (t.success) setTopPosts(t.top_posts || []);
+      if (i.success) setInsights(i.insights || []);
+      if (a.success) setAudience(a);
+      if (o.success) setOnline(o.online_followers || []);
+      if (s.success) setStories(s.stories || []);
+      if (c.success) setPendingComments(c.comments || []);
+      const { data: statusData } = await supabase.from('comentarios_status').select('*');
+      const sm = {}; (statusData || []).forEach(s => { sm[s.comment_id] = s; });
+      setStatusMap(sm);
+      if (!p.success) setError("Não foi possível conectar ao Instagram");
+    } catch (e) { setError(e.message); }
+    setLoading(false); setRefreshing(false);
+  }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const markCommentStatus = async (commentId, mediaId, status, resposta = "") => {
+    const payload = { comment_id: commentId, media_id: mediaId, status, resposta, respondido_em: new Date().toISOString() };
+    await supabase.from('comentarios_status').upsert(payload, { onConflict: 'comment_id' });
+    setStatusMap(sm => ({ ...sm, [commentId]: payload }));
   };
-  const tog = (pid, cid) => setPosts(ps => ps.map(p => p.id !== pid ? p : { ...p, comments: p.comments.map(c => c.id !== cid ? c : { ...c, answered: !c.answered }) }));
-  const mIcon = t => t === "VIDEO" ? "🎥" : t === "CAROUSEL_ALBUM" ? "🖼️" : "📷";
+
+  const replyToComment = async (commentId, mediaId, message) => {
+    setSending(s => ({ ...s, [commentId]: true }));
+    const res = await igFetch('reply_comment', { comment_id: commentId, message });
+    if (res.success) {
+      await markCommentStatus(commentId, mediaId, 'answered', message);
+      setReplyDraft(d => ({ ...d, [commentId]: "" }));
+    } else {
+      alert("Erro: " + JSON.stringify(res.error));
+    }
+    setSending(s => ({ ...s, [commentId]: false }));
+  };
+
+  const getSum = name => { const m = insights.find(i => i.name === name); return m?.values?.reduce((s, v) => s + (v.value || 0), 0) || 0; };
+  const getValues = name => insights.find(i => i.name === name)?.values || [];
+  const mIcon = t => t === "VIDEO" ? "🎥" : t === "CAROUSEL_ALBUM" ? "🖼️" : t === "REELS" ? "🎬" : "📷";
+  const daysSince = ts => Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
+  const isKeyword = text => KEYWORDS.some(k => (text || '').toLowerCase().includes(k));
+
+  // Pending comments analysis
+  const reallyPending = pendingComments.filter(c => !statusMap[c.id] || statusMap[c.id].status === 'pending');
+  const possibleLeads = reallyPending.filter(c => isKeyword(c.text));
+  const oldPending = reallyPending.filter(c => daysSince(c.timestamp) > 2);
+
+  // Media performance by format
+  const mediaByType = { IMAGE: [], VIDEO: [], CAROUSEL_ALBUM: [], REELS: [] };
+  media.forEach(m => {
+    const t = m.media_product_type === 'REELS' ? 'REELS' : m.media_type;
+    if (mediaByType[t]) mediaByType[t].push(m);
+  });
+  const avgEngByType = Object.entries(mediaByType).map(([type, posts]) => ({
+    type, count: posts.length,
+    avg: posts.length ? Math.round(posts.reduce((s, p) => s + (p.like_count + p.comments_count), 0) / posts.length) : 0,
+  })).filter(x => x.count > 0);
+
+  // Week vs previous week
+  const reachValues = getValues('reach');
+  const last7 = reachValues.slice(-7).reduce((s, v) => s + (v.value || 0), 0);
+  const prev7 = reachValues.slice(-14, -7).reduce((s, v) => s + (v.value || 0), 0);
+  const weekDelta = prev7 ? Math.round(((last7 - prev7) / prev7) * 100) : 0;
+
+  if (loading) return <div style={{ textAlign: "center", padding: 60, color: "#94A3B8" }}>⏳ Carregando dados do Instagram...</div>;
+
+  const TABS_INSTA = [
+    ["visao", "🏠 Visão Geral"],
+    ["comentarios", "💬 Comentários"],
+    ["conteudo", "📱 Conteúdo"],
+    ["audiencia", "👥 Audiência"],
+    ["stories", "🎬 Stories & Reels"],
+    ["comparativos", "📈 Comparativos"],
+    ["alertas", "⚠️ Alertas"],
+    ["sugestoes", "🤖 Sugestões IA"],
+  ];
+
+  const Card = ({ children, style = {} }) => <div style={{ background: "#fff", borderRadius: 12, border: "1.5px solid #E2E8F0", padding: "16px 18px", ...style }}>{children}</div>;
+  const Stat = ({ icon, label, value, color, bg, sub }) => (
+    <div style={{ background: bg, borderRadius: 12, padding: "12px 14px", border: `1.5px solid ${bg}` }}>
+      <div style={{ fontSize: 18 }}>{icon}</div>
+      <div style={{ fontSize: 20, fontWeight: 800, color, marginTop: 4 }}>{value}</div>
+      <div style={{ fontSize: 11, color, fontWeight: 600, opacity: 0.85 }}>{label}</div>
+      {sub && <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+
+  const SectionLabel = ({ children }) => <div style={{ fontSize: 12, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>{children}</div>;
+
+  // Helper para criar demanda a partir de qualquer contexto
+  const demandFrom = (title, opts = {}) => onCreateTask({
+    title, channel: "Instagram", priority: opts.priority || "Alta", person: opts.person || "Gabi",
+    status: "A fazer", sector: opts.sector || "redes", date: "", obs: opts.obs || ""
+  });
+
   return (
     <div>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#1E293B" }}>📸 Instagram — @mikaeliscudeler.advogada</h3>
-          <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748B" }}>{mode === "demo" ? "Modo demonstração · dados fictícios" : "✅ Conta real conectada"}</p>
+      {/* Profile header */}
+      {profile && (
+        <div style={{ background: "linear-gradient(135deg,#833AB4,#E1306C,#F77737)", borderRadius: 16, padding: "16px 20px", marginBottom: 18, color: "#fff", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          {profile.profile_picture_url ? <img src={profile.profile_picture_url} alt="" style={{ width: 56, height: 56, borderRadius: "50%", border: "3px solid #fff", objectFit: "cover" }} /> :
+            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#fff", color: "#E1306C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 800 }}>M</div>}
+          <div style={{ flex: 1, minWidth: 160 }}>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>@{profile.username}</div>
+            <div style={{ fontSize: 11, opacity: 0.9 }}>{profile.followers_count?.toLocaleString("pt-BR")} seguidores · {profile.media_count} posts</div>
+          </div>
+          <button onClick={loadAll} disabled={refreshing} style={{ fontSize: 11, background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", color: "#fff", padding: "5px 12px", borderRadius: 999, cursor: refreshing ? "wait" : "pointer", fontFamily: "inherit", fontWeight: 600 }}>{refreshing ? "⏳" : "🔄 Atualizar"}</button>
         </div>
-        <button onClick={() => setMode(m => m === "setup" ? "demo" : "setup")} style={{ fontSize: 12, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: mode === "real" ? "#D1FAE5" : "#fff", color: mode === "real" ? "#059669" : "#E1306C", cursor: "pointer", fontWeight: 600, fontFamily: "inherit" }}>{mode === "real" ? "✅ Conectado" : "🔗 Conectar conta real"}</button>
+      )}
+
+      {error && <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 10, padding: "10px 14px", color: "#7F1D1D", fontSize: 12, marginBottom: 14 }}>⚠️ {error}</div>}
+
+      {/* Sub-tabs */}
+      <div style={{ display: "flex", gap: 4, background: "#F1F5F9", borderRadius: 9, padding: 3, marginBottom: 20, overflowX: "auto", flexWrap: "nowrap" }}>
+        {TABS_INSTA.map(([v, l]) => (
+          <button key={v} onClick={() => setInstaTab(v)} style={{ padding: "6px 14px", borderRadius: 7, border: "none", background: instaTab === v ? "#fff" : "transparent", color: instaTab === v ? "#E1306C" : "#64748B", fontWeight: instaTab === v ? 700 : 500, fontSize: 12, cursor: "pointer", boxShadow: instaTab === v ? "0 1px 3px rgba(0,0,0,0.08)" : "none", fontFamily: "inherit", whiteSpace: "nowrap" }}>{l}</button>
+        ))}
       </div>
 
-      {mode === "setup" && (
-        <div style={{ background: "#FFF7ED", border: "1.5px solid #FED7AA", borderRadius: 12, padding: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#92400E", marginBottom: 6 }}>🔐 Conectar Instagram Business</div>
-          <p style={{ margin: "0 0 10px", fontSize: 12, color: "#78350F", lineHeight: 1.6 }}>Acesse <strong>developers.facebook.com → Graph API Explorer</strong>, gere token com <code>instagram_basic</code>, <code>instagram_manage_insights</code> e <code>instagram_manage_comments</code>.</p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <input value={token} onChange={e => setToken(e.target.value)} placeholder="EAABw0xyz..." style={{ flex: 1, minWidth: 200, padding: "7px 10px", borderRadius: 8, border: "1.5px solid #FCD34D", fontSize: 12, fontFamily: "monospace", outline: "none" }} />
-            <button onClick={fetchReal} disabled={loading} style={{ padding: "7px 16px", borderRadius: 8, border: "none", background: "#F59E0B", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>{loading ? "⏳" : "Conectar"}</button>
-            <button onClick={() => setMode("demo")} style={{ padding: "7px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Cancelar</button>
+      {/* VISÃO GERAL */}
+      {instaTab === "visao" && (
+        <div>
+          {/* Alertas urgentes */}
+          {(reallyPending.length > 0 || oldPending.length > 0) && (
+            <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+              {reallyPending.length > 0 && (
+                <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 18 }}>🔴</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#7F1D1D" }}>{reallyPending.length} comentário{reallyPending.length > 1 ? "s" : ""} sem resposta</div>
+                    <div style={{ fontSize: 11, color: "#991B1B" }}>{possibleLeads.length > 0 && `${possibleLeads.length} podem ser leads (palavras-chave)`}</div>
+                  </div>
+                  <button onClick={() => setInstaTab("comentarios")} style={{ padding: "6px 12px", borderRadius: 7, border: "none", background: "#DC2626", color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: "inherit" }}>Responder →</button>
+                </div>
+              )}
+              {oldPending.length > 0 && (
+                <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 18 }}>⏰</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#78350F" }}>{oldPending.length} comentário{oldPending.length > 1 ? "s" : ""} parados há +2 dias</div>
+                  </div>
+                  <button onClick={() => demandFrom("Limpar fila de comentários atrasados do IG", { priority: "Urgente", obs: `${oldPending.length} comentários sem resposta há +2 dias` })} style={{ padding: "6px 12px", borderRadius: 7, border: "none", background: "#D97706", color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: "inherit" }}>+ Demanda</button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Resumo do dia */}
+          <Card style={{ marginBottom: 16, background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)", border: "1.5px solid #BFDBFE" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#1E3A8A", marginBottom: 10 }}>📋 Resumo do dia</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10 }}>
+              <div style={{ background: "#fff", padding: 10, borderRadius: 8 }}>
+                <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600 }}>Posts ativos hoje</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: "#1E3A8A" }}>{media.filter(m => daysSince(m.timestamp) === 0).length}</div>
+              </div>
+              <div style={{ background: "#fff", padding: 10, borderRadius: 8 }}>
+                <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600 }}>Stories ativos</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: "#1E3A8A" }}>{stories.length}</div>
+              </div>
+              <div style={{ background: "#fff", padding: 10, borderRadius: 8 }}>
+                <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600 }}>Leads para responder</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: "#DC2626" }}>{possibleLeads.length}</div>
+              </div>
+              <div style={{ background: "#fff", padding: 10, borderRadius: 8 }}>
+                <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600 }}>Alcance vs sem. passada</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: weekDelta >= 0 ? "#059669" : "#DC2626" }}>{weekDelta >= 0 ? "+" : ""}{weekDelta}%</div>
+              </div>
+            </div>
+          </Card>
+
+          {/* KPIs */}
+          <SectionLabel>📊 Visão geral — últimos 30 dias</SectionLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 20 }}>
+            <Stat icon="👁" label="Alcance" value={getSum('reach').toLocaleString("pt-BR")} color="#3B82F6" bg="#EFF6FF" />
+            <Stat icon="📡" label="Impressões" value={getSum('impressions').toLocaleString("pt-BR")} color="#6366F1" bg="#EEF2FF" />
+            <Stat icon="👤" label="Visitas perfil" value={getSum('profile_views').toLocaleString("pt-BR")} color="#EC4899" bg="#FDF2F8" />
+            <Stat icon="🔗" label="Cliques no link" value={getSum('website_clicks').toLocaleString("pt-BR")} color="#059669" bg="#ECFDF5" />
+            <Stat icon="❤️" label="Total curtidas (25p)" value={media.reduce((s, m) => s + (m.like_count || 0), 0).toLocaleString("pt-BR")} color="#DC2626" bg="#FEF2F2" />
+          </div>
+
+          {/* Lembretes */}
+          <SectionLabel>⏰ Lembretes</SectionLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10, marginBottom: 20 }}>
+            {[
+              { icon: "💬", title: "Responder DMs e comentários", action: () => setInstaTab("comentarios") },
+              { icon: "📸", title: "Programar stories de hoje", action: () => demandFrom("Programar stories do dia") },
+              { icon: "📊", title: "Verificar campanhas pagas", action: () => demandFrom("Conferir performance das campanhas") },
+              { icon: "💡", title: "Ver sugestões de conteúdo", action: () => setInstaTab("sugestoes") },
+            ].map((l, i) => (
+              <button key={i} onClick={l.action} style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", textAlign: "left", fontFamily: "inherit", transition: "all 0.15s" }}
+                onMouseEnter={e => e.currentTarget.style.transform = "translateY(-1px)"}
+                onMouseLeave={e => e.currentTarget.style.transform = ""}>
+                <span style={{ fontSize: 18 }}>{l.icon}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#1E293B" }}>{l.title}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Insights rápidos */}
+          <SectionLabel>✨ Insights rápidos</SectionLabel>
+          <Card>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {avgEngByType.length > 0 && (() => {
+                const best = avgEngByType.reduce((a, b) => a.avg > b.avg ? a : b);
+                return <div style={{ fontSize: 13, color: "#1E293B" }}><strong>🏆 Melhor formato:</strong> {best.type === "REELS" ? "Reels" : best.type === "CAROUSEL_ALBUM" ? "Carrossel" : best.type === "VIDEO" ? "Vídeo" : "Foto"} — {best.avg.toLocaleString("pt-BR")} de engajamento médio</div>;
+              })()}
+              {weekDelta !== 0 && <div style={{ fontSize: 13, color: "#1E293B" }}><strong>{weekDelta >= 0 ? "📈" : "📉"} Alcance semanal:</strong> {weekDelta >= 0 ? "subiu" : "caiu"} {Math.abs(weekDelta)}% em relação à semana passada</div>}
+              {topPosts[0] && <div style={{ fontSize: 13, color: "#1E293B" }}><strong>🔥 Post do momento:</strong> "{(topPosts[0].caption || "").slice(0, 60)}..." ({topPosts[0].like_count} curtidas, {topPosts[0].comments_count} comentários)</div>}
+              {possibleLeads.length > 0 && <div style={{ fontSize: 13, color: "#1E293B" }}><strong>💎 Possíveis leads:</strong> {possibleLeads.length} comentários com palavras-chave de interesse</div>}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* COMENTÁRIOS */}
+      {instaTab === "comentarios" && (
+        <div>
+          <Card style={{ marginBottom: 14, background: "linear-gradient(135deg,#FEF2F2,#FFFBEB)", border: "1.5px solid #FED7AA" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#7C2D12" }}>Você tem {reallyPending.length} comentário{reallyPending.length !== 1 ? "s" : ""} pendente{reallyPending.length !== 1 ? "s" : ""}</div>
+                <div style={{ fontSize: 11, color: "#92400E" }}>{possibleLeads.length} possíveis leads · {oldPending.length} parados há +2 dias</div>
+              </div>
+              <button onClick={() => demandFrom(`Responder ${reallyPending.length} comentários do IG`, { priority: "Urgente", obs: `${possibleLeads.length} leads · ${oldPending.length} parados +2d` })} style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "inherit" }}>+ Criar demanda</button>
+            </div>
+          </Card>
+
+          {/* Filtros */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+            {[["pending", "Pendentes"], ["leads", "Possíveis leads"], ["old", "Atrasados +2d"], ["answered", "Respondidos"], ["all", "Todos"]].map(([v, l]) => (
+              <button key={v} onClick={() => setCommentFilter(v)} style={{ padding: "5px 12px", borderRadius: 999, border: `1.5px solid ${commentFilter === v ? "#3B82F6" : "#E2E8F0"}`, background: commentFilter === v ? "#3B82F6" : "#fff", color: commentFilter === v ? "#fff" : "#64748B", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}>{l}</button>
+            ))}
+          </div>
+
+          {/* Posts agrupados com comentários */}
+          {(() => {
+            // Group by media
+            const byMedia = {};
+            pendingComments.forEach(c => { if (!byMedia[c.media_id]) byMedia[c.media_id] = { caption: c.media_caption, permalink: c.media_permalink, thumbnail: c.media_thumbnail, comments: [] }; byMedia[c.media_id].comments.push(c); });
+            const groups = Object.entries(byMedia).filter(([, g]) => {
+              const filtered = g.comments.filter(c => {
+                const st = statusMap[c.id];
+                const answered = st?.status === 'answered';
+                if (commentFilter === "pending") return !answered;
+                if (commentFilter === "leads") return !answered && isKeyword(c.text);
+                if (commentFilter === "old") return !answered && daysSince(c.timestamp) > 2;
+                if (commentFilter === "answered") return answered;
+                return true;
+              });
+              return filtered.length > 0;
+            }).sort(([, a], [, b]) => b.comments.length - a.comments.length);
+
+            if (groups.length === 0) return <div style={{ textAlign: "center", padding: 40, color: "#94A3B8", fontSize: 13 }}>🎉 Nenhum comentário {commentFilter === "pending" ? "pendente" : "neste filtro"}!</div>;
+
+            return groups.map(([mediaId, g]) => {
+              const filteredC = g.comments.filter(c => {
+                const st = statusMap[c.id];
+                const answered = st?.status === 'answered';
+                if (commentFilter === "pending") return !answered;
+                if (commentFilter === "leads") return !answered && isKeyword(c.text);
+                if (commentFilter === "old") return !answered && daysSince(c.timestamp) > 2;
+                if (commentFilter === "answered") return answered;
+                return true;
+              });
+
+              return (
+                <Card key={mediaId} style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
+                    {g.thumbnail && <img src={g.thumbnail} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: "#1E293B", fontWeight: 600, lineHeight: 1.4 }}>{g.caption}...</div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
+                        <span style={{ fontSize: 11, background: "#FEE2E2", color: "#DC2626", padding: "1px 7px", borderRadius: 999, fontWeight: 700 }}>{filteredC.length} pendente{filteredC.length !== 1 ? "s" : ""}</span>
+                        <a href={g.permalink} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#3B82F6", textDecoration: "none" }}>Ver no IG →</a>
+                        <button onClick={() => demandFrom(`Responder ${filteredC.length} comentários — ${g.caption}`, { obs: g.permalink })} style={{ marginLeft: "auto", padding: "3px 10px", borderRadius: 6, border: "1.5px solid #E2E8F0", background: "#F8FAFC", color: "#3B82F6", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}>+ Demanda</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {filteredC.slice(0, 10).map(c => {
+                      const st = statusMap[c.id];
+                      const answered = st?.status === 'answered';
+                      const isLead = isKeyword(c.text);
+                      const isOld = daysSince(c.timestamp) > 2;
+                      return (
+                        <div key={c.id} style={{ background: answered ? "#F0FDF4" : isLead ? "#FFFBEB" : "#F8FAFC", border: `1.5px solid ${answered ? "#A7F3D0" : isLead ? "#FDE68A" : "#E2E8F0"}`, borderRadius: 9, padding: 10 }}>
+                          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 6 }}>
+                            <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg,#833AB4,#E1306C)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{c.username?.[0]?.toUpperCase() || "?"}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: "#475569" }}>@{c.username}</span>
+                                {isLead && <span style={{ fontSize: 9, background: "#FEF3C7", color: "#92400E", padding: "1px 6px", borderRadius: 999, fontWeight: 700 }}>💎 LEAD</span>}
+                                {isOld && <span style={{ fontSize: 9, background: "#FEE2E2", color: "#DC2626", padding: "1px 6px", borderRadius: 999, fontWeight: 700 }}>⏰ +{daysSince(c.timestamp)}d</span>}
+                                {answered && <span style={{ fontSize: 9, background: "#D1FAE5", color: "#065F46", padding: "1px 6px", borderRadius: 999, fontWeight: 700 }}>✓ Respondido</span>}
+                              </div>
+                              <div style={{ fontSize: 12, color: "#334155", marginTop: 3, wordBreak: "break-word" }}>{c.text}</div>
+                            </div>
+                          </div>
+                          {!answered && (
+                            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                              <input value={replyDraft[c.id] || ""} onChange={e => setReplyDraft(d => ({ ...d, [c.id]: e.target.value }))} placeholder="Digite sua resposta..." style={{ flex: 1, padding: "6px 10px", borderRadius: 7, border: "1.5px solid #E2E8F0", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                              <button disabled={!replyDraft[c.id]?.trim() || sending[c.id]} onClick={() => replyToComment(c.id, mediaId, replyDraft[c.id])} style={{ padding: "6px 12px", borderRadius: 7, border: "none", background: replyDraft[c.id]?.trim() ? "linear-gradient(135deg,#1E3A8A,#3B82F6)" : "#CBD5E1", color: "#fff", cursor: replyDraft[c.id]?.trim() ? "pointer" : "not-allowed", fontSize: 11, fontWeight: 700, fontFamily: "inherit" }}>{sending[c.id] ? "..." : "Enviar"}</button>
+                              <button onClick={() => markCommentStatus(c.id, mediaId, 'answered', '(marcado manualmente)')} title="Marcar como respondido" style={{ padding: "6px 10px", borderRadius: 7, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", cursor: "pointer", fontSize: 11, fontFamily: "inherit" }}>✓</button>
+                              <button onClick={() => demandFrom(`Responder: @${c.username} — "${c.text.slice(0,40)}..."`, { obs: `Comentário em: ${g.permalink}` })} title="Criar demanda" style={{ padding: "6px 10px", borderRadius: 7, border: "1.5px solid #E2E8F0", background: "#fff", color: "#3B82F6", cursor: "pointer", fontSize: 11, fontFamily: "inherit" }}>+</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Card>
+              );
+            });
+          })()}
+        </div>
+      )}
+
+      {/* CONTEÚDO */}
+      {instaTab === "conteudo" && (
+        <div>
+          <SectionLabel>🏆 Top Posts por engajamento</SectionLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 12, marginBottom: 24 }}>
+            {topPosts.map((p, i) => (
+              <Card key={p.id} style={{ padding: 0, overflow: "hidden" }}>
+                {p.thumbnail_url && <img src={p.thumbnail_url} alt="" style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover" }} />}
+                <div style={{ padding: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                    <span style={{ fontSize: 13 }}>{mIcon(p.media_type)}</span>
+                    {i === 0 && <span style={{ fontSize: 9, background: "#FEF3C7", color: "#92400E", padding: "1px 6px", borderRadius: 999, fontWeight: 700 }}>🥇 TOP</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#1E293B", marginBottom: 8, lineHeight: 1.4 }}>{(p.caption || "").slice(0, 70)}...</div>
+                  <div style={{ display: "flex", gap: 8, fontSize: 10, color: "#64748B", marginBottom: 8 }}>
+                    <span>❤️ <strong style={{ color: "#E1306C" }}>{p.like_count}</strong></span>
+                    <span>💬 <strong style={{ color: "#3B82F6" }}>{p.comments_count}</strong></span>
+                  </div>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <a href={p.permalink} target="_blank" rel="noreferrer" style={{ flex: 1, padding: "5px 8px", borderRadius: 6, border: "1.5px solid #E2E8F0", background: "#F8FAFC", color: "#3B82F6", textDecoration: "none", fontSize: 10, fontWeight: 600, textAlign: "center" }}>Ver</a>
+                    <button onClick={() => demandFrom(`Criar variação deste post: ${(p.caption||"").slice(0,40)}`, { obs: p.permalink })} style={{ flex: 1, padding: "5px 8px", borderRadius: 6, border: "none", background: "#3B82F6", color: "#fff", cursor: "pointer", fontSize: 10, fontWeight: 600, fontFamily: "inherit" }}>+ Variação</button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          <SectionLabel>📊 Performance por formato</SectionLabel>
+          <Card style={{ marginBottom: 20 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 12 }}>
+              {avgEngByType.map(t => (
+                <div key={t.type} style={{ textAlign: "center", padding: 12, background: "#F8FAFC", borderRadius: 8 }}>
+                  <div style={{ fontSize: 22 }}>{mIcon(t.type)}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#1E293B", marginTop: 4 }}>{t.type === "REELS" ? "Reels" : t.type === "CAROUSEL_ALBUM" ? "Carrossel" : t.type === "VIDEO" ? "Vídeo" : "Foto"}</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: "#3B82F6", marginTop: 6 }}>{t.avg.toLocaleString("pt-BR")}</div>
+                  <div style={{ fontSize: 10, color: "#94A3B8" }}>engajamento médio · {t.count} posts</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <SectionLabel>📱 Posts recentes</SectionLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))", gap: 8 }}>
+            {media.slice(0, 12).map(m => (
+              <a key={m.id} href={m.permalink} target="_blank" rel="noreferrer" style={{ position: "relative", aspectRatio: "1/1", borderRadius: 8, overflow: "hidden", display: "block", background: "#F1F5F9" }}>
+                {(m.thumbnail_url || m.media_url) && <img src={m.thumbnail_url || m.media_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+                <div style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.6)", color: "#fff", borderRadius: 4, padding: "1px 5px", fontSize: 9 }}>{mIcon(m.media_type)}</div>
+                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(transparent,rgba(0,0,0,0.8))", padding: "16px 6px 6px", color: "#fff", fontSize: 10 }}>❤️ {m.like_count} 💬 {m.comments_count}</div>
+              </a>
+            ))}
           </div>
         </div>
       )}
 
-      {/* Sub-tabs */}
-      <div style={{ display: "flex", gap: 4, background: "#F1F5F9", borderRadius: 9, padding: 3, marginBottom: 20, width: "fit-content" }}>
-        {[["insights", "📊 Insights do perfil"], ["comentarios", "💬 Comentários"]].map(([v, l]) => (
-          <button key={v} onClick={() => setInstaTab(v)} style={{ padding: "6px 16px", borderRadius: 7, border: "none", background: instaTab === v ? "#fff" : "transparent", color: instaTab === v ? "#E1306C" : "#64748B", fontWeight: instaTab === v ? 700 : 500, fontSize: 13, cursor: "pointer", boxShadow: instaTab === v ? "0 1px 3px rgba(0,0,0,0.08)" : "none", fontFamily: "inherit" }}>{l}</button>
-        ))}
-      </div>
-
-      {/* Insights tab */}
-      {instaTab === "insights" && <InsightsPanel token={token} mode={mode} />}
-
-      {/* Comentários tab */}
-      {instaTab === "comentarios" && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 14 }}>
-          {sorted.map((post, idx) => {
-            const un = post.comments.filter(c => !c.answered);
-            const heat = Math.min(100, un.length * 18 + post.comments.length * 3);
-            const kw = post.comments.filter(c => !c.answered && KEYWORDS.some(k => c.text.toLowerCase().includes(k)));
-            const bc = heat >= 70 ? "#FCA5A5" : heat >= 40 ? "#FCD34D" : "#BBF7D0";
-            const isE = exp === post.id;
-            return (
-              <div key={post.id} style={{ background: "#fff", borderRadius: 12, border: `1.5px solid ${bc}`, padding: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 16 }}>{mIcon(post.media_type)}</span>{idx === 0 && <span style={{ fontSize: 9, background: "#FEE2E2", color: "#DC2626", padding: "2px 7px", borderRadius: 999, fontWeight: 800, textTransform: "uppercase" }}>⚡ Máx</span>}</div>
-                  <span style={{ fontSize: 11, color: "#94A3B8" }}>{post.timestamp}</span>
-                </div>
-                <p style={{ margin: "0 0 10px", fontSize: 12, color: "#334155", lineHeight: 1.4 }}>{post.caption.length > 85 ? post.caption.slice(0, 85) + "…" : post.caption}</p>
-                <div style={{ marginBottom: 8 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#94A3B8", marginBottom: 4 }}><span>Score</span><span><strong style={{ color: "#475569" }}>{un.length}</strong> sem resposta · {post.comments.length} total</span></div><HBar score={heat} /></div>
-                {kw.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>{[...new Set(kw.flatMap(c => KEYWORDS.filter(k => c.text.toLowerCase().includes(k))))].slice(0, 4).map(k => <span key={k} style={{ fontSize: 10, background: "#FEF3C7", color: "#92400E", padding: "1px 7px", borderRadius: 999, fontWeight: 600 }}>"{k}"</span>)}</div>}
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <button onClick={() => setExp(isE ? null : post.id)} style={{ flex: 1, padding: "6px", borderRadius: 7, border: "1.5px solid #E2E8F0", background: "#F8FAFC", color: "#475569", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}>{isE ? "▲ Fechar" : `▼ ${un.length} pendente${un.length !== 1 ? "s" : ""}`}</button>
-                  {un.length > 0 && <button onClick={() => onCreateTask({ title: `Responder comentários — "${post.caption.slice(0, 35)}..."`, channel: "Instagram", priority: heat >= 70 ? "Urgente" : "Alta", person: "Gabi", status: "A fazer", sector: "redes", date: "", obs: `${un.length} comentários sem resposta` })} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: "inherit" }}>+ Demanda</button>}
-                </div>
-                {isE && <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: 10, marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>{post.comments.map(c => <div key={c.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", opacity: c.answered ? 0.38 : 1 }}><div style={{ width: 26, height: 26, borderRadius: "50%", background: "#EFF6FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#1E3A8A", flexShrink: 0 }}>{c.username[0].toUpperCase()}</div><div style={{ flex: 1 }}><div style={{ fontSize: 10, fontWeight: 700, color: "#475569" }}>@{c.username}</div><div style={{ fontSize: 12, color: "#334155" }}>{c.text}</div></div><button onClick={() => tog(post.id, c.id)} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 6, border: "1.5px solid #E2E8F0", background: c.answered ? "#D1FAE5" : "#fff", color: c.answered ? "#059669" : "#94A3B8", cursor: "pointer", fontWeight: 700, flexShrink: 0, fontFamily: "inherit" }}>{c.answered ? "✓" : "Marcar"}</button></div>)}</div>}
+      {/* AUDIÊNCIA */}
+      {instaTab === "audiencia" && (
+        <div>
+          <SectionLabel>👥 Demografia da audiência</SectionLabel>
+          {!audience && <div style={{ textAlign: "center", padding: 30, color: "#94A3B8", fontSize: 13 }}>Carregando dados de audiência...</div>}
+          {audience && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+                <Card>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#1E293B", marginBottom: 10 }}>🌍 Países</div>
+                  {Object.entries(audience.country || {}).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => {
+                    const total = Object.values(audience.country).reduce((s, x) => s + x, 0);
+                    const pct = total ? Math.round((v / total) * 100) : 0;
+                    return (
+                      <div key={k} style={{ marginBottom: 6 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#475569" }}>
+                          <span>{k}</span><span style={{ fontWeight: 700 }}>{pct}%</span>
+                        </div>
+                        <div style={{ height: 5, background: "#F1F5F9", borderRadius: 999 }}><div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg,#3B82F6,#6366F1)", borderRadius: 999 }} /></div>
+                      </div>
+                    );
+                  })}
+                </Card>
+                <Card>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#1E293B", marginBottom: 10 }}>🏙 Cidades</div>
+                  {Object.entries(audience.city || {}).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => {
+                    const total = Object.values(audience.city).reduce((s, x) => s + x, 0);
+                    const pct = total ? Math.round((v / total) * 100) : 0;
+                    return (
+                      <div key={k} style={{ marginBottom: 6 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#475569" }}>
+                          <span style={{ wordBreak: "break-all" }}>{k}</span><span style={{ fontWeight: 700 }}>{pct}%</span>
+                        </div>
+                        <div style={{ height: 5, background: "#F1F5F9", borderRadius: 999 }}><div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg,#EC4899,#F77737)", borderRadius: 999 }} /></div>
+                      </div>
+                    );
+                  })}
+                </Card>
               </div>
-            );
-          })}
+              <Card style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#1E293B", marginBottom: 10 }}>👤 Faixa etária + gênero</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(100px,1fr))", gap: 8 }}>
+                  {Object.entries(audience.age_gender || {}).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => (
+                    <div key={k} style={{ background: "#F8FAFC", padding: 8, borderRadius: 8, textAlign: "center" }}>
+                      <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600 }}>{k}</div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: "#1E293B" }}>{v.toLocaleString("pt-BR")}</div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </>
+          )}
+
+          <SectionLabel>⏰ Horários de maior atividade</SectionLabel>
+          <Card>
+            {online.length === 0 ? <div style={{ textAlign: "center", color: "#94A3B8", padding: 20, fontSize: 12 }}>Sem dados de horário ainda</div> :
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 80 }}>
+                {(online[0]?.values?.[0]?.value || {}) && Object.entries(online[0]?.values?.[0]?.value || {}).map(([hour, val]) => {
+                  const max = Math.max(...Object.values(online[0]?.values?.[0]?.value || {}));
+                  const pct = max ? (val / max) * 100 : 0;
+                  return (
+                    <div key={hour} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                      <div style={{ width: "100%", height: `${pct}%`, background: "linear-gradient(180deg,#3B82F6,#6366F1)", borderRadius: "3px 3px 0 0", minHeight: 2 }} />
+                      <div style={{ fontSize: 8, color: "#94A3B8" }}>{hour}h</div>
+                    </div>
+                  );
+                })}
+              </div>
+            }
+            <button onClick={() => demandFrom("Programar posts nos horários de pico", { obs: "Ver gráfico de horários ativos" })} style={{ marginTop: 12, fontSize: 11, padding: "5px 12px", borderRadius: 7, border: "1.5px solid #E2E8F0", background: "#F8FAFC", color: "#3B82F6", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>+ Criar demanda baseada nos horários</button>
+          </Card>
+        </div>
+      )}
+
+      {/* STORIES & REELS */}
+      {instaTab === "stories" && (
+        <div>
+          <SectionLabel>🎬 Stories ativos ({stories.length})</SectionLabel>
+          {stories.length === 0 ? <Card><div style={{ textAlign: "center", color: "#94A3B8", padding: 20, fontSize: 13 }}>Nenhum story ativo no momento</div></Card> :
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 10, marginBottom: 20 }}>
+              {stories.map(s => (
+                <div key={s.id} style={{ position: "relative", aspectRatio: "9/16", borderRadius: 10, overflow: "hidden", background: "#F1F5F9" }}>
+                  {s.thumbnail_url && <img src={s.thumbnail_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(transparent,rgba(0,0,0,0.7))", padding: "20px 8px 8px", color: "#fff", fontSize: 10 }}>
+                    {new Date(s.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          }
+
+          <SectionLabel>🎬 Reels com mais retorno</SectionLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 12 }}>
+            {media.filter(m => m.media_type === "VIDEO" || m.media_product_type === "REELS").slice(0, 8).map(r => (
+              <Card key={r.id} style={{ padding: 0, overflow: "hidden" }}>
+                {r.thumbnail_url && <img src={r.thumbnail_url} alt="" style={{ width: "100%", aspectRatio: "9/16", objectFit: "cover" }} />}
+                <div style={{ padding: 10 }}>
+                  <div style={{ fontSize: 11, color: "#1E293B", marginBottom: 6, lineHeight: 1.3 }}>{(r.caption || "").slice(0, 55)}...</div>
+                  <div style={{ display: "flex", gap: 8, fontSize: 10, color: "#64748B", marginBottom: 6 }}>
+                    <span>❤️ {r.like_count}</span><span>💬 {r.comments_count}</span>
+                  </div>
+                  <button onClick={() => demandFrom(`Repostar/Variação do Reels: ${(r.caption||"").slice(0,40)}`, { obs: r.permalink })} style={{ width: "100%", padding: "5px", borderRadius: 6, border: "none", background: "#3B82F6", color: "#fff", cursor: "pointer", fontSize: 10, fontWeight: 700, fontFamily: "inherit" }}>+ Reaproveitar</button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* COMPARATIVOS */}
+      {instaTab === "comparativos" && (
+        <div>
+          <SectionLabel>📈 Esta semana vs semana passada</SectionLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, marginBottom: 20 }}>
+            {[
+              { name: 'reach', label: 'Alcance', color: '#3B82F6' },
+              { name: 'impressions', label: 'Impressões', color: '#6366F1' },
+              { name: 'profile_views', label: 'Visitas perfil', color: '#EC4899' },
+              { name: 'website_clicks', label: 'Cliques no link', color: '#059669' },
+            ].map(metric => {
+              const vals = getValues(metric.name);
+              const cur = vals.slice(-7).reduce((s, v) => s + (v.value || 0), 0);
+              const prev = vals.slice(-14, -7).reduce((s, v) => s + (v.value || 0), 0);
+              const delta = prev ? Math.round(((cur - prev) / prev) * 100) : 0;
+              return (
+                <Card key={metric.name}>
+                  <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600 }}>{metric.label}</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: metric.color, marginTop: 4 }}>{cur.toLocaleString("pt-BR")}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: delta >= 0 ? "#059669" : "#DC2626" }}>{delta >= 0 ? "↑" : "↓"} {Math.abs(delta)}%</span>
+                    <span style={{ fontSize: 10, color: "#94A3B8" }}>vs sem. anterior ({prev.toLocaleString("pt-BR")})</span>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ALERTAS */}
+      {instaTab === "alertas" && (
+        <div>
+          <SectionLabel>⚠️ Alertas automáticos</SectionLabel>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {weekDelta < -15 && (
+              <Card style={{ background: "#FEF2F2", borderColor: "#FECACA" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#7F1D1D" }}>📉 Queda forte de alcance</div>
+                    <div style={{ fontSize: 11, color: "#991B1B" }}>Alcance caiu {Math.abs(weekDelta)}% vs semana passada</div>
+                  </div>
+                  <button onClick={() => demandFrom("Investigar queda de alcance no IG", { priority: "Urgente" })} style={{ padding: "6px 12px", borderRadius: 7, border: "none", background: "#DC2626", color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: "inherit" }}>+ Demanda</button>
+                </div>
+              </Card>
+            )}
+            {weekDelta > 15 && (
+              <Card style={{ background: "#ECFDF5", borderColor: "#A7F3D0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#065F46" }}>📈 Pico de alcance!</div>
+                    <div style={{ fontSize: 11, color: "#047857" }}>Alcance subiu {weekDelta}% — momento ideal para postar mais</div>
+                  </div>
+                  <button onClick={() => demandFrom("Aproveitar pico de alcance — postar conteúdo extra", { priority: "Alta" })} style={{ padding: "6px 12px", borderRadius: 7, border: "none", background: "#059669", color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: "inherit" }}>+ Demanda</button>
+                </div>
+              </Card>
+            )}
+            {oldPending.length > 0 && (
+              <Card style={{ background: "#FFFBEB", borderColor: "#FDE68A" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#78350F" }}>⏰ Comentários antigos sem resposta</div>
+                    <div style={{ fontSize: 11, color: "#92400E" }}>{oldPending.length} comentário{oldPending.length > 1 ? "s parados há +2 dias" : " parado há +2 dias"}</div>
+                  </div>
+                  <button onClick={() => setInstaTab("comentarios")} style={{ padding: "6px 12px", borderRadius: 7, border: "none", background: "#D97706", color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: "inherit" }}>Ver</button>
+                </div>
+              </Card>
+            )}
+            {possibleLeads.length >= 3 && (
+              <Card style={{ background: "#EFF6FF", borderColor: "#BFDBFE" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#1E3A8A" }}>💎 Possíveis leads esperando</div>
+                    <div style={{ fontSize: 11, color: "#3B82F6" }}>{possibleLeads.length} comentários com palavras-chave de interesse</div>
+                  </div>
+                  <button onClick={() => { setInstaTab("comentarios"); setCommentFilter("leads"); }} style={{ padding: "6px 12px", borderRadius: 7, border: "none", background: "#3B82F6", color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: "inherit" }}>Ver leads</button>
+                </div>
+              </Card>
+            )}
+            {topPosts[0] && topPosts[0].like_count > (media.reduce((s, m) => s + m.like_count, 0) / media.length) * 2 && (
+              <Card style={{ background: "#FDF4FF", borderColor: "#F0ABFC" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#86198F" }}>🔥 Post viralizando</div>
+                    <div style={{ fontSize: 11, color: "#A21CAF" }}>"{(topPosts[0].caption || "").slice(0, 60)}..." está 2x acima da média</div>
+                  </div>
+                  <button onClick={() => demandFrom(`Impulsionar post viral: ${(topPosts[0].caption||"").slice(0,40)}`, { priority: "Urgente", obs: topPosts[0].permalink })} style={{ padding: "6px 12px", borderRadius: 7, border: "none", background: "#A21CAF", color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: "inherit" }}>+ Impulsionar</button>
+                </div>
+              </Card>
+            )}
+            {weekDelta >= -15 && weekDelta <= 15 && oldPending.length === 0 && possibleLeads.length < 3 && (
+              <Card><div style={{ textAlign: "center", padding: 20, color: "#94A3B8", fontSize: 13 }}>🎉 Tudo certo! Nenhum alerta no momento.</div></Card>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SUGESTÕES IA */}
+      {instaTab === "sugestoes" && (
+        <div>
+          <Card style={{ marginBottom: 16, background: "linear-gradient(135deg,#FDF4FF,#FAE8FF)", border: "1.5px solid #E9D5FF" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#6B21A8", marginBottom: 4 }}>🤖 Sugestões baseadas nos seus dados reais</div>
+            <div style={{ fontSize: 11, color: "#7C3AED" }}>Ideias geradas a partir do que está funcionando na sua conta + boas práticas de marketing.</div>
+          </Card>
+
+          {(() => {
+            const bestFormat = avgEngByType.length ? avgEngByType.reduce((a, b) => a.avg > b.avg ? a : b) : null;
+            const topPost = topPosts[0];
+            const setores = [
+              {
+                icon: "🎯", titulo: "Atração — Alcançar mais", color: "#3B82F6", bg: "#EFF6FF",
+                ideias: [
+                  bestFormat && `Aumentar produção de ${bestFormat.type === "REELS" ? "Reels" : bestFormat.type === "CAROUSEL_ALBUM" ? "Carrosséis" : "vídeos"} — formato com maior engajamento médio na sua conta (${bestFormat.avg.toLocaleString("pt-BR")})`,
+                  `Postar conteúdo nos horários de pico (ver aba Audiência)`,
+                  `Usar hashtags estratégicas: #brasileirosnaespanha #vistoespanhol #aposentadorianoexterior`,
+                  topPost && `Variação do post que mais engajou: "${(topPost.caption||"").slice(0,60)}..." (${topPost.like_count} curtidas)`,
+                ].filter(Boolean)
+              },
+              {
+                icon: "💎", titulo: "Conversão — Qualificar leads", color: "#059669", bg: "#ECFDF5",
+                ideias: [
+                  `Criar Reels com CTA forte: "Comenta CONSULTORIA que mando o link"`,
+                  `Post-isca com depoimento de cliente + link na bio`,
+                  `Stories com sticker de "Pergunta" para descobrir dúvidas + criar conteúdo de resposta`,
+                  possibleLeads.length > 0 && `Responder ${possibleLeads.length} comentários com palavras-chave de interesse (já são leads!)`,
+                ].filter(Boolean)
+              },
+              {
+                icon: "❤️", titulo: "Engajamento", color: "#EC4899", bg: "#FDF2F8",
+                ideias: [
+                  `Carrossel com enquete: "Você prefere visto X ou Y?"`,
+                  `Reels com pergunta polêmica + pedir opinião nos comentários`,
+                  `Stories diários com sticker de pergunta/enquete (5x mais engajamento)`,
+                  `Reposts de Stories de seguidores (cria conexão)`,
+                ]
+              },
+              {
+                icon: "🏆", titulo: "Autoridade", color: "#D97706", bg: "#FFFBEB",
+                ideias: [
+                  `Carrossel com caso real anonimizado: "Como conseguimos o visto D7 para a cliente X"`,
+                  `Reels explicando termo técnico em 60s ("O que é CNIS?")`,
+                  `Post com dado/estatística + sua opinião especializada`,
+                  `Comparativo: "Visto NHR vs D7 — qual escolher?"`,
+                ]
+              },
+              {
+                icon: "📚", titulo: "Retenção & Salvamentos", color: "#6366F1", bg: "#EEF2FF",
+                ideias: [
+                  `Carrossel "Guia completo: 7 passos para se aposentar em [país]"`,
+                  `Post com checklist visual (alto índice de salvamento)`,
+                  `Reels educativo com gancho: "Salve esse vídeo, você vai precisar"`,
+                  `Glossário visual de termos previdenciários em carrossel`,
+                ]
+              },
+            ];
+            return setores.map((s, i) => (
+              <div key={i} style={{ marginBottom: 16 }}>
+                <SectionLabel><span style={{ color: s.color }}>{s.icon} {s.titulo}</span></SectionLabel>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {s.ideias.map((ideia, j) => (
+                    <div key={j} style={{ background: s.bg, border: `1.5px solid ${s.bg}`, borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ flex: 1, fontSize: 12, color: "#1E293B", lineHeight: 1.5 }}>{ideia}</div>
+                      <button onClick={() => demandFrom(ideia.slice(0, 80), { sector: "conteudo", priority: "Normal", obs: `Sugestão IA — ${s.titulo}` })} style={{ padding: "5px 10px", borderRadius: 6, border: "none", background: s.color, color: "#fff", cursor: "pointer", fontSize: 10, fontWeight: 700, fontFamily: "inherit", whiteSpace: "nowrap" }}>+ Demanda</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ));
+          })()}
         </div>
       )}
     </div>
