@@ -2343,6 +2343,426 @@ function PlannerPage({ tasks }) {
   );
 }
 
+
+// ── IMERSÃO MÉTODO PREV ───────────────────────────────────────────────────────
+const IMERSAO_OWNERS = {
+  "Mikaeli":  { bg: "#E0E7FF", color: "#3730A3", dot: "#1E3A8A" },
+  "Eli":      { bg: "#D1FAE5", color: "#065F46", dot: "#10B981" },
+  "Gabi":     { bg: "#FCE7F3", color: "#9F1239", dot: "#EC4899" },
+  "Julia":    { bg: "#F3E8FF", color: "#6B21A8", dot: "#A855F7" },
+  "A definir":{ bg: "#F5F5F4", color: "#44403C", dot: "#78716C" },
+};
+
+const IMERSAO_PLATS = {
+  "Instagram":{ bg: "#FDF2F8", color: "#9F1239", dot: "#E1306C" },
+  "Hotmart":  { bg: "#FFEDD5", color: "#7C2D12", dot: "#EA580C" },
+  "Zoom":     { bg: "#E0F2FE", color: "#0C4A6E", dot: "#0EA5E9" },
+  "E-mail":   { bg: "#FEF9C3", color: "#713F12", dot: "#CA8A04" },
+  "WhatsApp": { bg: "#ECFCCB", color: "#365314", dot: "#65A30D" },
+  "Claude":   { bg: "#FED7AA", color: "#7C2D12", dot: "#D97706" },
+};
+
+const IMERSAO_PARCS = {
+  "Luan":                  { bg: "#EDE9FE", color: "#5B21B6", dot: "#7C3AED" },
+  "ChatGuru":              { bg: "#CCFBF1", color: "#134E4A", dot: "#0D9488" },
+  "Prévius/Lógike":        { bg: "#FFE4E6", color: "#881337", dot: "#9F1239" },
+  "Tramitação Inteligente":{ bg: "#FEF3C7", color: "#78350F", dot: "#B45309" },
+};
+
+const IMERSAO_STATUS = {
+  done:     { bg: "#D1FAE5", color: "#065F46", border: "#10B981", label: "Pronto" },
+  progress: { bg: "#DBEAFE", color: "#1E40AF", border: "#3B82F6", label: "Em andamento" },
+  critical: { bg: "#FEE2E2", color: "#991B1B", border: "#DC2626", label: "Crítico" },
+  pending:  { bg: "#F1F5F9", color: "#475569", border: "#94A3B8", label: "A iniciar" },
+};
+
+const IMERSAO_CATEGORIES = [
+  "Conteúdo principal", "Bônus prometidos", "Vendas e checkout", "Operação e jurídico",
+  "Captação e lista quente", "Setup técnico", "Cenário e marca", "Roteiro e cronograma",
+  "Engajamento e didática", "Experiência do aluno", "Equipe e plano B",
+  "Pré-aula imediata", "Pós-imersão"
+];
+
+// Target date: 25/05/2026 09:00 BRT
+const IMERSAO_TARGET = new Date('2026-05-25T12:00:00Z'); // 9h BRT = 12h UTC
+
+// Parse "22/05" or "22/05 às 8h" → Date object (current year)
+function parseImersaoDate(str) {
+  if (!str) return null;
+  const m = str.match(/^(\d{1,2})\/(\d{1,2})/);
+  if (!m) return null;
+  const year = new Date().getFullYear();
+  return new Date(year, parseInt(m[2]) - 1, parseInt(m[1]), 23, 59, 59);
+}
+
+function ImersaoPage() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState("cat"); // cat | chrono
+  const [modal, setModal] = useState(null);
+  const [editorName, setEditorName] = useState(() => localStorage.getItem("imersao_editor") || "Mikaeli");
+  const [filters, setFilters] = useState({ search: "", status: "", owner: "", plat: "", parc: "" });
+  const [countdown, setCountdown] = useState({ d: 0, h: 0, m: 0, s: 0, expired: false });
+
+  // Countdown ticker
+  useEffect(() => {
+    const tick = () => {
+      const diff = IMERSAO_TARGET.getTime() - Date.now();
+      if (diff <= 0) { setCountdown({ d: 0, h: 0, m: 0, s: 0, expired: true }); return; }
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setCountdown({ d, h, m, s, expired: false });
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("imersao_itens").select("*").order("id");
+    if (data) setItems(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => { localStorage.setItem("imersao_editor", editorName); }, [editorName]);
+
+  const saveItem = async (item) => {
+    const payload = {
+      ...item,
+      last_edit_by: editorName,
+      last_edit_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    if (item.id) {
+      await supabase.from("imersao_itens").update(payload).eq("id", item.id);
+    } else {
+      const maxId = Math.max(0, ...items.map(i => i.id)) + 1;
+      await supabase.from("imersao_itens").insert({ ...payload, id: maxId });
+    }
+    setModal(null);
+    load();
+  };
+
+  const deleteItem = async (id) => {
+    if (!window.confirm("Excluir este item permanentemente?")) return;
+    await supabase.from("imersao_itens").delete().eq("id", id);
+    setModal(null);
+    load();
+  };
+
+  const quickStatus = async (id, newStatus) => {
+    const item = items.find(i => i.id === id);
+    if (!item) return;
+    const payload = { status: newStatus, last_edit_by: editorName, last_edit_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    await supabase.from("imersao_itens").update(payload).eq("id", id);
+    setItems(items.map(i => i.id === id ? { ...i, ...payload } : i));
+  };
+
+  // Filtering
+  const filtered = items.filter(it => {
+    if (filters.search && !`${it.title} ${it.obs} ${it.obs2} ${it.cat}`.toLowerCase().includes(filters.search.toLowerCase())) return false;
+    if (filters.status && it.status !== filters.status) return false;
+    if (filters.owner && !(it.owners || []).includes(filters.owner)) return false;
+    if (filters.plat && !(it.plats || []).includes(filters.plat)) return false;
+    if (filters.parc && !(it.parcs || []).includes(filters.parc)) return false;
+    return true;
+  });
+
+  // Stats
+  const total = items.length;
+  const done = items.filter(i => i.status === "done").length;
+  const progress = items.filter(i => i.status === "progress").length;
+  const critical = items.filter(i => i.status === "critical").length;
+  const pendingCount = items.filter(i => i.status === "pending").length;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+
+  // Critical overdue detection
+  const today = new Date(); today.setHours(0,0,0,0);
+  const criticalOverdue = items.filter(i => {
+    if (i.status === "done") return false;
+    const d = parseImersaoDate(i.date);
+    if (!d) return false;
+    return d < today && (i.status === "critical" || i.urgency === 3);
+  });
+
+  // Grouping
+  const groups = view === "cat"
+    ? IMERSAO_CATEGORIES.map(cat => ({ label: cat, items: filtered.filter(i => i.cat === cat) })).filter(g => g.items.length > 0)
+    : (() => {
+        const phases = [
+          { label: "🔥 Atrasados (críticos)", filter: i => { const d = parseImersaoDate(i.date); return d && d < today && i.status !== "done"; } },
+          { label: "📅 Hoje", filter: i => { const d = parseImersaoDate(i.date); return d && d.toDateString() === new Date().toDateString(); } },
+          { label: "⏰ Próximos 3 dias", filter: i => { const d = parseImersaoDate(i.date); if (!d) return false; const diff = (d - today)/86400000; return diff > 0 && diff <= 3; } },
+          { label: "📆 Esta semana", filter: i => { const d = parseImersaoDate(i.date); if (!d) return false; const diff = (d - today)/86400000; return diff > 3 && diff <= 7; } },
+          { label: "🗓 Próximas semanas", filter: i => { const d = parseImersaoDate(i.date); if (!d) return false; const diff = (d - today)/86400000; return diff > 7; } },
+          { label: "🔁 Em curso / Pronto", filter: i => !parseImersaoDate(i.date) && (i.status === "done" || i.date === "Em curso") },
+          { label: "📋 Outros", filter: i => !parseImersaoDate(i.date) && i.status !== "done" && i.date !== "Em curso" },
+        ];
+        return phases.map(p => ({ label: p.label, items: filtered.filter(p.filter) })).filter(g => g.items.length > 0);
+      })();
+
+  // CSV export
+  const exportCSV = () => {
+    const rows = [["ID","Categoria","Título","Responsáveis","Plataformas","Parceiros","Prazo","Status","Urgência","Observação","Obs 2","Última edição por","Última edição em"]];
+    items.forEach(i => rows.push([
+      i.id, i.cat, i.title, (i.owners||[]).join("; "), (i.plats||[]).join("; "), (i.parcs||[]).join("; "),
+      i.date, IMERSAO_STATUS[i.status]?.label || i.status, i.urgency, i.obs || "", i.obs2 || "",
+      i.last_edit_by || "", i.last_edit_at ? new Date(i.last_edit_at).toLocaleString("pt-BR") : ""
+    ]));
+    const csv = "\uFEFF" + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `imersao_${new Date().toISOString().split("T")[0]}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (loading) return <div style={{ textAlign: "center", padding: 60, color: "#94A3B8" }}>⏳ Carregando itens da imersão...</div>;
+
+  return (
+    <div>
+      {/* HERO with countdown */}
+      <div style={{ background: "linear-gradient(135deg,#1C252D,#431E17)", borderRadius: 18, padding: "22px 26px", marginBottom: 22, color: "#fff", boxShadow: "0 12px 30px rgba(15,23,42,0.25)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14, marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#C69263", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>Imersão Método Prev</div>
+            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "Georgia, 'Cormorant Garamond', serif", letterSpacing: "0.01em" }}>Painel de comando — 25 e 28 de maio</div>
+            <div style={{ fontSize: 12, color: "#EADDD3", marginTop: 4 }}>Início: 25/05 às 9h00 BRT · Plataforma Zoom</div>
+          </div>
+          <select value={editorName} onChange={e => setEditorName(e.target.value)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid rgba(198,146,99,0.4)", background: "rgba(255,255,255,0.1)", color: "#fff", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
+            <option style={{ color: "#000" }} value="Mikaeli">Editando como: Mikaeli</option>
+            <option style={{ color: "#000" }} value="Eli">Editando como: Eli</option>
+            <option style={{ color: "#000" }} value="Gabi">Editando como: Gabi</option>
+            <option style={{ color: "#000" }} value="Julia">Editando como: Julia</option>
+          </select>
+        </div>
+
+        {/* Countdown */}
+        {countdown.expired ? (
+          <div style={{ textAlign: "center", padding: "12px 0", fontSize: 16, color: "#C69263", fontWeight: 700, fontFamily: "Georgia, serif" }}>🎬 A imersão começou!</div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+            {[["d", "DIAS"], ["h", "HORAS"], ["m", "MIN"], ["s", "SEG"]].map(([k, l]) => (
+              <div key={k} style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 8px", textAlign: "center", border: "1px solid rgba(198,146,99,0.25)" }}>
+                <div style={{ fontSize: 28, fontWeight: 800, fontFamily: "Georgia, serif", color: "#fff", lineHeight: 1 }}>{String(countdown[k]).padStart(2, "0")}</div>
+                <div style={{ fontSize: 9, color: "#C69263", fontWeight: 700, letterSpacing: "0.15em", marginTop: 4 }}>{l}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Alert: critical items past due */}
+      {criticalOverdue.length > 0 && (
+        <div style={{ background: "#FEF2F2", border: "1.5px solid #DC2626", borderLeft: "4px solid #DC2626", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12, animation: "pulse 2s infinite" }}>
+          <span style={{ fontSize: 22 }}>🚨</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#7F1D1D" }}>{criticalOverdue.length} item{criticalOverdue.length > 1 ? "s" : ""} crítico{criticalOverdue.length > 1 ? "s" : ""} com prazo vencido!</div>
+            <div style={{ fontSize: 11, color: "#991B1B", marginTop: 2 }}>{criticalOverdue.slice(0,3).map(i => `#${i.id} ${i.title}`).join(" · ")}{criticalOverdue.length > 3 ? ` +${criticalOverdue.length - 3}` : ""}</div>
+          </div>
+        </div>
+      )}
+
+      {/* KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 16 }}>
+        <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 12, padding: "14px 16px" }}>
+          <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>Progresso</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: "#1E293B", marginTop: 4 }}>{pct}%</div>
+          <div style={{ height: 5, background: "#F1F5F9", borderRadius: 999, marginTop: 6 }}><div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg,#10B981,#059669)", borderRadius: 999 }} /></div>
+          <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 4 }}>{done} de {total} prontos</div>
+        </div>
+        <div onClick={() => setFilters({ ...filters, status: "done" })} style={{ background: "#D1FAE5", border: "1.5px solid #A7F3D0", borderRadius: 12, padding: "14px 16px", cursor: "pointer" }}>
+          <div style={{ fontSize: 11, color: "#065F46", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>Pronto</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: "#065F46", marginTop: 4 }}>{done}</div>
+        </div>
+        <div onClick={() => setFilters({ ...filters, status: "progress" })} style={{ background: "#DBEAFE", border: "1.5px solid #BFDBFE", borderRadius: 12, padding: "14px 16px", cursor: "pointer" }}>
+          <div style={{ fontSize: 11, color: "#1E40AF", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>Em andamento</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: "#1E40AF", marginTop: 4 }}>{progress}</div>
+        </div>
+        <div onClick={() => setFilters({ ...filters, status: "critical" })} style={{ background: "#FEE2E2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "14px 16px", cursor: "pointer" }}>
+          <div style={{ fontSize: 11, color: "#991B1B", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>Crítico</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: "#991B1B", marginTop: 4 }}>{critical}</div>
+        </div>
+        <div onClick={() => setFilters({ ...filters, status: "pending" })} style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 12, padding: "14px 16px", cursor: "pointer" }}>
+          <div style={{ fontSize: 11, color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>A iniciar</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: "#475569", marginTop: 4 }}>{pendingCount}</div>
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #E2E8F0", padding: "10px 14px", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
+        <input value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} placeholder="🔍 Buscar..." style={{ flex: "1 1 200px", padding: "6px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+        <select value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})} style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 11, fontFamily: "inherit", background: "#fff", cursor: "pointer" }}>
+          <option value="">Todos status</option>
+          {Object.entries(IMERSAO_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <select value={filters.owner} onChange={e => setFilters({...filters, owner: e.target.value})} style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 11, fontFamily: "inherit", background: "#fff", cursor: "pointer" }}>
+          <option value="">Todos responsáveis</option>
+          {Object.keys(IMERSAO_OWNERS).map(k => <option key={k}>{k}</option>)}
+        </select>
+        <select value={filters.plat} onChange={e => setFilters({...filters, plat: e.target.value})} style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 11, fontFamily: "inherit", background: "#fff", cursor: "pointer" }}>
+          <option value="">Todas plataformas</option>
+          {Object.keys(IMERSAO_PLATS).map(k => <option key={k}>{k}</option>)}
+        </select>
+        <select value={filters.parc} onChange={e => setFilters({...filters, parc: e.target.value})} style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 11, fontFamily: "inherit", background: "#fff", cursor: "pointer" }}>
+          <option value="">Todos parceiros</option>
+          {Object.keys(IMERSAO_PARCS).map(k => <option key={k}>{k}</option>)}
+        </select>
+        {(filters.search || filters.status || filters.owner || filters.plat || filters.parc) && (
+          <button onClick={() => setFilters({ search: "", status: "", owner: "", plat: "", parc: "" })} style={{ fontSize: 10, color: "#EF4444", background: "#FEE2E2", border: "none", padding: "5px 10px", borderRadius: 999, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>✕ Limpar</button>
+        )}
+        <div style={{ display: "flex", gap: 3, background: "#F1F5F9", borderRadius: 7, padding: 2, marginLeft: "auto" }}>
+          {[["cat", "Por frente"], ["chrono", "Cronológico"]].map(([v, l]) => (
+            <button key={v} onClick={() => setView(v)} style={{ padding: "4px 10px", borderRadius: 5, border: "none", background: view === v ? "#fff" : "transparent", color: view === v ? "#1E3A8A" : "#64748B", fontWeight: view === v ? 700 : 500, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+          ))}
+        </div>
+        <button onClick={() => setModal({ id: null, cat: IMERSAO_CATEGORIES[0], title: "", owners: [], plats: [], parcs: [], date: "", status: "pending", urgency: 2, obs: "", obs2: "" })} style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#1C252D,#431E17)", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 12, fontFamily: "inherit" }}>+ Item</button>
+        <button onClick={exportCSV} title="Exportar CSV" style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#475569", cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}>📥</button>
+        <button onClick={() => window.print()} title="Imprimir" style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#475569", cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}>🖨</button>
+      </div>
+
+      {/* Groups */}
+      {groups.map(g => (
+        <div key={g.label} style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, paddingBottom: 6, borderBottom: "1.5px solid #C69263" }}>
+            <span style={{ fontFamily: "Georgia, serif", fontSize: 16, fontWeight: 700, color: "#1C252D" }}>{g.label}</span>
+            <span style={{ fontSize: 10, background: "#1C252D", color: "#C69263", padding: "2px 8px", borderRadius: 999, fontWeight: 700 }}>{g.items.length}</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {g.items.map(it => {
+              const st = IMERSAO_STATUS[it.status] || IMERSAO_STATUS.pending;
+              const d = parseImersaoDate(it.date);
+              const isOverdue = d && d < today && it.status !== "done";
+              return (
+                <div key={it.id} style={{ background: "#fff", borderRadius: 10, border: `1.5px solid ${isOverdue ? "#DC2626" : "#E2E8F0"}`, borderLeft: `4px solid ${st.border}`, padding: "12px 14px", boxShadow: isOverdue ? "0 0 0 3px rgba(220,38,38,0.1)" : "none" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                    <span style={{ fontSize: 10, color: "#94A3B8", fontWeight: 700, minWidth: 24 }}>#{it.id}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#1E293B" }}>{it.title}</span>
+                        {isOverdue && <span style={{ fontSize: 9, background: "#DC2626", color: "#fff", padding: "1px 7px", borderRadius: 999, fontWeight: 700, animation: "pulse 2s infinite" }}>🚨 VENCIDO</span>}
+                      </div>
+                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 6 }}>
+                        <select value={it.status} onChange={e => quickStatus(it.id, e.target.value)} style={{ fontSize: 10, padding: "1px 6px", borderRadius: 999, border: "none", background: st.bg, color: st.color, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                          {Object.entries(IMERSAO_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                        </select>
+                        <span style={{ fontSize: 10, background: "#F1F5F9", color: "#475569", padding: "1px 7px", borderRadius: 999, fontWeight: 600 }}>📅 {it.date || "—"}</span>
+                        {(it.owners || []).map(o => { const c = IMERSAO_OWNERS[o] || IMERSAO_OWNERS["A definir"]; return <span key={o} style={{ fontSize: 10, background: c.bg, color: c.color, padding: "1px 7px", borderRadius: 999, fontWeight: 600 }}>👤 {o}</span>; })}
+                        {(it.plats || []).map(p => { const c = IMERSAO_PLATS[p] || {}; return <span key={p} style={{ fontSize: 10, background: c.bg || "#F1F5F9", color: c.color || "#475569", padding: "1px 7px", borderRadius: 999, fontWeight: 600 }}>{p}</span>; })}
+                        {(it.parcs || []).map(p => { const c = IMERSAO_PARCS[p] || {}; return <span key={p} style={{ fontSize: 10, background: c.bg || "#F1F5F9", color: c.color || "#475569", padding: "1px 7px", borderRadius: 999, fontWeight: 600 }}>🤝 {p}</span>; })}
+                        {it.urgency === 3 && <span style={{ fontSize: 10, color: "#DC2626", fontWeight: 700 }}>⚡ Alta urgência</span>}
+                      </div>
+                      {it.obs && <div style={{ fontSize: 11, color: "#64748B", lineHeight: 1.4, marginTop: 4 }}>{it.obs}</div>}
+                      {it.obs2 && <div style={{ fontSize: 11, color: "#64748B", lineHeight: 1.4, marginTop: 4, fontStyle: "italic" }}>📝 {it.obs2}</div>}
+                      {it.last_edit_by && it.last_edit_at && (
+                        <div style={{ fontSize: 9, color: "#94A3B8", marginTop: 6, fontStyle: "italic" }}>
+                          ✏️ {it.last_edit_by} · {new Date(it.last_edit_at).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                      )}
+                    </div>
+                    <button onClick={() => setModal(it)} style={{ background: "none", border: "1.5px solid #E2E8F0", borderRadius: 7, padding: "4px 10px", cursor: "pointer", fontSize: 11, color: "#475569", fontFamily: "inherit", whiteSpace: "nowrap" }}>✏️ Editar</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {modal && <ImersaoModal item={modal} onSave={saveItem} onDelete={deleteItem} onClose={() => setModal(null)} />}
+      <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }`}</style>
+    </div>
+  );
+}
+
+function ImersaoModal({ item, onSave, onDelete, onClose }) {
+  const [form, setForm] = useState({ ...item, owners: item.owners || [], plats: item.plats || [], parcs: item.parcs || [] });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const toggle = (k, val) => setForm(f => ({ ...f, [k]: f[k].includes(val) ? f[k].filter(x => x !== val) : [...f[k], val] }));
+  const I = { width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 13, color: "#1E293B", background: "#F8FAFC", outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
+  const L = { fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6, display: "block" };
+  const Chip = ({ active, color, onClick, children }) => (
+    <button type="button" onClick={onClick} style={{ padding: "4px 10px", borderRadius: 999, border: `1.5px solid ${active ? color : "#E2E8F0"}`, background: active ? color : "#fff", color: active ? "#fff" : "#475569", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}>{children}</button>
+  );
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(4px)" }} onClick={onClose}>
+      <div style={{ background: "#fff", borderRadius: 16, width: 620, maxWidth: "97vw", maxHeight: "94vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(15,23,42,0.2)" }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: "20px 24px 14px", borderBottom: "1px solid #F1F5F9", background: "linear-gradient(135deg,#1C252D,#431E17)", color: "#fff", borderRadius: "16px 16px 0 0" }}>
+          <div style={{ fontSize: 10, color: "#C69263", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase" }}>{form.id ? `Item #${form.id}` : "Novo item"}</div>
+          <h2 style={{ margin: "4px 0 0", fontSize: 17, fontWeight: 700, fontFamily: "Georgia, serif" }}>{form.id ? "Editar tarefa" : "Adicionar tarefa"}</h2>
+        </div>
+
+        <div style={{ padding: "20px 24px", display: "grid", gap: 14 }}>
+          <div><label style={L}>Título</label><input style={I} value={form.title} onChange={e => set("title", e.target.value)} /></div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div><label style={L}>Frente</label><select style={I} value={form.cat} onChange={e => set("cat", e.target.value)}>{IMERSAO_CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
+            <div><label style={L}>Prazo</label><input style={I} value={form.date} onChange={e => set("date", e.target.value)} placeholder="ex: 22/05 ou Em curso" /></div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={L}>Status</label>
+              <select style={I} value={form.status} onChange={e => set("status", e.target.value)}>
+                {Object.entries(IMERSAO_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={L}>Urgência</label>
+              <select style={I} value={form.urgency} onChange={e => set("urgency", parseInt(e.target.value))}>
+                <option value={3}>Alta</option><option value={2}>Média</option><option value={1}>Baixa</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style={L}>Responsáveis</label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {Object.entries(IMERSAO_OWNERS).map(([k, c]) => (
+                <Chip key={k} active={form.owners.includes(k)} color={c.dot} onClick={() => toggle("owners", k)}>{k}</Chip>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={L}>Plataformas</label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {Object.entries(IMERSAO_PLATS).map(([k, c]) => (
+                <Chip key={k} active={form.plats.includes(k)} color={c.dot} onClick={() => toggle("plats", k)}>{k}</Chip>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={L}>Parceiros</label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {Object.entries(IMERSAO_PARCS).map(([k, c]) => (
+                <Chip key={k} active={form.parcs.includes(k)} color={c.dot} onClick={() => toggle("parcs", k)}>{k}</Chip>
+              ))}
+            </div>
+          </div>
+          <div><label style={L}>Observação principal</label><textarea style={{ ...I, resize: "vertical", minHeight: 60 }} value={form.obs} onChange={e => set("obs", e.target.value)} /></div>
+          <div><label style={L}>Observação adicional</label><textarea style={{ ...I, resize: "vertical", minHeight: 60 }} value={form.obs2} onChange={e => set("obs2", e.target.value)} placeholder="Links, decisões pendentes, notas..." /></div>
+          {form.last_edit_by && form.last_edit_at && (
+            <div style={{ fontSize: 11, color: "#94A3B8", fontStyle: "italic", padding: "6px 0", borderTop: "1px dashed #E2E8F0" }}>
+              ✏️ Última edição: {form.last_edit_by} em {new Date(form.last_edit_at).toLocaleString("pt-BR")}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: "14px 24px", borderTop: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#F8FAFC", borderRadius: "0 0 16px 16px" }}>
+          <div>
+            {form.id && <button onClick={() => onDelete(form.id)} style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px solid #FECACA", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>🗑 Excluir</button>}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>Cancelar</button>
+            <button onClick={() => form.title.trim() && onSave(form)} style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#1C252D,#431E17)", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "inherit" }}>Salvar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── PARCERIAS ─────────────────────────────────────────────────────────────────
 const PARCERIA_TIPOS = ["Escola de idiomas", "Contador/Financeiro", "Advogado/Escritório", "Infoprodutor/Criador", "Câmbio/Remessas", "Agência de Imigração", "Outro"];
 const PARCERIA_STATUS = ["Prospecção", "Contato feito", "Proposta enviada", "Contrato enviado", "Ativo", "Pausado", "Encerrado"];
@@ -3106,7 +3526,7 @@ export default function App() {
 
   const stats = useMemo(() => STATUSES.map(s => ({ label: s, count: tasks.filter(t => t.status === s).length, ...STATUS_STYLE[s] })), [tasks]);
   const fmtDate = d => d ? new Date(d + "T12:00").toLocaleDateString("pt-BR") : "—";
-  const TABS = [["home", "🏠 Início"], ["planner", "⚡ Planner"], ["demandas", "📋 Demandas"], ["agenda", "🗓 Agenda"], ["fixas", "📌 Rotinas"], ["parcerias", "🤝 Parcerias"], ["calendario", "📅 Calendário"], ["instagram", "📸 Instagram"], ["relatorios", "📊 Relatórios"]];
+  const TABS = [["home", "🏠 Início"], ["planner", "⚡ Planner"], ["demandas", "📋 Demandas"], ["agenda", "🗓 Agenda"], ["fixas", "📌 Rotinas"], ["parcerias", "🤝 Parcerias"], ["imersao", "🎓 Imersão"], ["calendario", "📅 Calendário"], ["instagram", "📸 Instagram"], ["relatorios", "📊 Relatórios"]];
 
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#1E293B" }}>
@@ -3180,6 +3600,7 @@ export default function App() {
         {tab === "fixas" && <FixasPage />}
         {tab === "planner" && <PlannerPage tasks={tasks} />}
         {tab === "parcerias" && <ParceriasPage />}
+        {tab === "imersao" && <ImersaoPage />}
         {tab === "calendario" && <CalendarioPage />}
         {tab === "instagram" && <InstaPanel onCreateTask={task => { saveTask({ ...task, id: null }); setTab("demandas"); }} />}
         {tab === "relatorios" && <ReportsPage />}
