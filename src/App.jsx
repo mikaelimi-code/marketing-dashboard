@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
+import ComentariosTab from "./ComentariosTab.jsx";
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 const PEOPLE = ["Gabi", "Julia", "Mikaeli"];
@@ -718,105 +719,7 @@ function InstaPanel({ onCreateTask }) {
 
       {/* COMENTÁRIOS */}
       {instaTab === "comentarios" && (
-        <div>
-          <Card style={{ marginBottom: 14, background: "linear-gradient(135deg,#FEF2F2,#FFFBEB)", border: "1.5px solid #FED7AA" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#7C2D12" }}>Você tem {reallyPending.length} comentário{reallyPending.length !== 1 ? "s" : ""} pendente{reallyPending.length !== 1 ? "s" : ""}</div>
-                <div style={{ fontSize: 11, color: "#92400E" }}>{possibleLeads.length} possíveis leads · {oldPending.length} parados há +2 dias</div>
-              </div>
-              <button onClick={() => demandFrom(`Responder ${reallyPending.length} comentários do IG`, { priority: "Urgente", obs: `${possibleLeads.length} leads · ${oldPending.length} parados +2d` })} style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#1E3A8A,#3B82F6)", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "inherit" }}>+ Criar demanda</button>
-            </div>
-          </Card>
-
-          {/* Filtros */}
-          <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-            {[["pending", "Pendentes"], ["leads", "Possíveis leads"], ["old", "Atrasados +2d"], ["answered", "Respondidos"], ["all", "Todos"]].map(([v, l]) => (
-              <button key={v} onClick={() => setCommentFilter(v)} style={{ padding: "5px 12px", borderRadius: 999, border: `1.5px solid ${commentFilter === v ? "#3B82F6" : "#E2E8F0"}`, background: commentFilter === v ? "#3B82F6" : "#fff", color: commentFilter === v ? "#fff" : "#64748B", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}>{l}</button>
-            ))}
-          </div>
-
-          {/* Posts agrupados com comentários */}
-          {(() => {
-            // Group by media
-            const byMedia = {};
-            pendingComments.forEach(c => { if (!byMedia[c.media_id]) byMedia[c.media_id] = { caption: c.media_caption, permalink: c.media_permalink, thumbnail: c.media_thumbnail, comments: [] }; byMedia[c.media_id].comments.push(c); });
-            const groups = Object.entries(byMedia).filter(([, g]) => {
-              const filtered = g.comments.filter(c => {
-                const st = statusMap[c.id];
-                const answered = st?.status === 'answered';
-                if (commentFilter === "pending") return !answered;
-                if (commentFilter === "leads") return !answered && isKeyword(c.text);
-                if (commentFilter === "old") return !answered && daysSince(c.timestamp) > 2;
-                if (commentFilter === "answered") return answered;
-                return true;
-              });
-              return filtered.length > 0;
-            }).sort(([, a], [, b]) => b.comments.length - a.comments.length);
-
-            if (groups.length === 0) return <div style={{ textAlign: "center", padding: 40, color: "#94A3B8", fontSize: 13 }}>🎉 Nenhum comentário {commentFilter === "pending" ? "pendente" : "neste filtro"}!</div>;
-
-            return groups.map(([mediaId, g]) => {
-              const filteredC = g.comments.filter(c => {
-                const st = statusMap[c.id];
-                const answered = st?.status === 'answered';
-                if (commentFilter === "pending") return !answered;
-                if (commentFilter === "leads") return !answered && isKeyword(c.text);
-                if (commentFilter === "old") return !answered && daysSince(c.timestamp) > 2;
-                if (commentFilter === "answered") return answered;
-                return true;
-              });
-
-              return (
-                <Card key={mediaId} style={{ marginBottom: 14 }}>
-                  <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
-                    {g.thumbnail && <img src={g.thumbnail} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12, color: "#1E293B", fontWeight: 600, lineHeight: 1.4 }}>{g.caption}...</div>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
-                        <span style={{ fontSize: 11, background: "#FEE2E2", color: "#DC2626", padding: "1px 7px", borderRadius: 999, fontWeight: 700 }}>{filteredC.length} pendente{filteredC.length !== 1 ? "s" : ""}</span>
-                        <a href={g.permalink} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#3B82F6", textDecoration: "none" }}>Ver no IG →</a>
-                        <button onClick={() => demandFrom(`Responder ${filteredC.length} comentários — ${g.caption}`, { obs: g.permalink })} style={{ marginLeft: "auto", padding: "3px 10px", borderRadius: 6, border: "1.5px solid #E2E8F0", background: "#F8FAFC", color: "#3B82F6", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}>+ Demanda</button>
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {filteredC.slice(0, 10).map(c => {
-                      const st = statusMap[c.id];
-                      const answered = st?.status === 'answered';
-                      const isLead = isKeyword(c.text);
-                      const isOld = daysSince(c.timestamp) > 2;
-                      return (
-                        <div key={c.id} style={{ background: answered ? "#F0FDF4" : isLead ? "#FFFBEB" : "#F8FAFC", border: `1.5px solid ${answered ? "#A7F3D0" : isLead ? "#FDE68A" : "#E2E8F0"}`, borderRadius: 9, padding: 10 }}>
-                          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 6 }}>
-                            <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg,#833AB4,#E1306C)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{c.username?.[0]?.toUpperCase() || "?"}</div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                                <span style={{ fontSize: 11, fontWeight: 700, color: "#475569" }}>@{c.username}</span>
-                                {isLead && <span style={{ fontSize: 9, background: "#FEF3C7", color: "#92400E", padding: "1px 6px", borderRadius: 999, fontWeight: 700 }}>💎 LEAD</span>}
-                                {isOld && <span style={{ fontSize: 9, background: "#FEE2E2", color: "#DC2626", padding: "1px 6px", borderRadius: 999, fontWeight: 700 }}>⏰ +{daysSince(c.timestamp)}d</span>}
-                                {answered && <span style={{ fontSize: 9, background: "#D1FAE5", color: "#065F46", padding: "1px 6px", borderRadius: 999, fontWeight: 700 }}>✓ Respondido</span>}
-                              </div>
-                              <div style={{ fontSize: 12, color: "#334155", marginTop: 3, wordBreak: "break-word" }}>{c.text}</div>
-                            </div>
-                          </div>
-                          {!answered && (
-                            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                              <input value={replyDraft[c.id] || ""} onChange={e => setReplyDraft(d => ({ ...d, [c.id]: e.target.value }))} placeholder="Digite sua resposta..." style={{ flex: 1, padding: "6px 10px", borderRadius: 7, border: "1.5px solid #E2E8F0", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
-                              <button disabled={!replyDraft[c.id]?.trim() || sending[c.id]} onClick={() => replyToComment(c.id, mediaId, replyDraft[c.id])} style={{ padding: "6px 12px", borderRadius: 7, border: "none", background: replyDraft[c.id]?.trim() ? "linear-gradient(135deg,#1E3A8A,#3B82F6)" : "#CBD5E1", color: "#fff", cursor: replyDraft[c.id]?.trim() ? "pointer" : "not-allowed", fontSize: 11, fontWeight: 700, fontFamily: "inherit" }}>{sending[c.id] ? "..." : "Enviar"}</button>
-                              <button onClick={() => markCommentStatus(c.id, mediaId, 'answered', '(marcado manualmente)')} title="Marcar como respondido" style={{ padding: "6px 10px", borderRadius: 7, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", cursor: "pointer", fontSize: 11, fontFamily: "inherit" }}>✓</button>
-                              <button onClick={() => demandFrom(`Responder: @${c.username} — "${c.text.slice(0,40)}..."`, { obs: `Comentário em: ${g.permalink}` })} title="Criar demanda" style={{ padding: "6px 10px", borderRadius: 7, border: "1.5px solid #E2E8F0", background: "#fff", color: "#3B82F6", cursor: "pointer", fontSize: 11, fontFamily: "inherit" }}>+</button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </Card>
-              );
-            });
-          })()}
-        </div>
+        <ComentariosTab supabase={supabase} igFetch={igFetch} />
       )}
 
       {/* CONTEÚDO */}
