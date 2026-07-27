@@ -3,7 +3,7 @@ import { supabase } from "./supabase.js";
 import ComentariosTab from "./ComentariosTab.jsx";
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
-const PEOPLE = ["Gabi", "Julia", "Mikaeli"];
+const PEOPLE = ["Gabi", "Julia", "Debora", "Mikaeli"];
 const SECTORS = [
   { id: "imersao",     label: "Imersão",      icon: "🚀", color: "#6366F1", bg: "#EEF2FF" },
   { id: "redes",       label: "Redes Sociais", icon: "📱", color: "#EC4899", bg: "#FDF2F8" },
@@ -16,7 +16,7 @@ const STATUSES = ["A fazer", "Em andamento", "Aguardando aprovação", "Concluí
 const PRIORITIES = ["Urgente", "Alta", "Normal", "Baixa"];
 const CHANNELS = ["Instagram", "YouTube", "TikTok", "WhatsApp", "Site", "Interno"];
 const CHANNEL_ICONS = { Instagram: "📸", YouTube: "▶️", TikTok: "🎵", WhatsApp: "💬", Site: "🌐", Interno: "🏢" };
-const PERSON_COLORS = { Gabi: "#3B82F6", Julia: "#6366F1", Mikaeli: "#0EA5E9" };
+const PERSON_COLORS = { Gabi: "#3B82F6", Julia: "#6366F1", Debora: "#C69263", Mikaeli: "#0EA5E9" };
 const PRIORITY_STYLE = {
   Urgente: { bg: "#FEE2E2", color: "#DC2626", dot: "#DC2626" },
   Alta:    { bg: "#FEF3C7", color: "#D97706", dot: "#D97706" },
@@ -1900,6 +1900,7 @@ function FixasPage() {
 const BLOCOS_CONFIG = {
   Gabi:    [{ id: "manha", label: "☀️ Manhã", inicio: "07:30", fim: "13:00" }, { id: "tarde", label: "🌤 Tarde", inicio: "14:00", fim: "17:00" }],
   Julia:   [{ id: "manha", label: "☀️ Manhã", inicio: "07:30", fim: "11:00" }, { id: "tarde", label: "🌤 Tarde", inicio: "11:00", fim: "17:00" }],
+  Debora:   [{ id: "manha", label: "☀️ Manhã", inicio: "08:20", fim: "13:00" }, { id: "tarde", label: "🌤 Tarde", inicio: "14:00", fim: "18:00" }],
   Mikaeli: [{ id: "manha", label: "☀️ Manhã", inicio: "08:00", fim: "12:00" }, { id: "tarde", label: "🌤 Tarde", inicio: "13:00", fim: "17:00" }],
 };
 
@@ -2253,6 +2254,7 @@ const IMERSAO_OWNERS = {
   "Eli":      { bg: "#D1FAE5", color: "#065F46", dot: "#10B981" },
   "Gabi":     { bg: "#FCE7F3", color: "#9F1239", dot: "#EC4899" },
   "Julia":    { bg: "#F3E8FF", color: "#6B21A8", dot: "#A855F7" },
+  "Debora":   { bg: "#F6E9DC", color: "#7A4A22", dot: "#C69263" },
   "A definir":{ bg: "#F5F5F4", color: "#44403C", dot: "#78716C" },
 };
 
@@ -2440,6 +2442,7 @@ function ImersaoPage() {
             <option style={{ color: "#000" }} value="Eli">Editando como: Eli</option>
             <option style={{ color: "#000" }} value="Gabi">Editando como: Gabi</option>
             <option style={{ color: "#000" }} value="Julia">Editando como: Julia</option>
+            <option style={{ color: "#000" }} value="Debora">Editando como: Debora</option>
           </select>
         </div>
 
@@ -3440,7 +3443,7 @@ export default function App() {
           <div>
             <div style={{ fontSize: 10, color: "#93C5FD", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 3 }}>Mikaeli Scudeler Advogada</div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#fff" }}>Dashboard de Marketing</h1>
-            <p style={{ margin: "3px 0 0", fontSize: 12, color: "#93C5FD" }}>{tasks.length} demandas · {SECTORS.length} setores · Gabi · Julia · Mikaeli</p>
+            <p style={{ margin: "3px 0 0", fontSize: 12, color: "#93C5FD" }}>{tasks.length} demandas · {SECTORS.length} setores · Gabi · Julia · Debora · Mikaeli</p>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {PEOPLE.map(p => <Avatar key={p} name={p} size={34} />)}
